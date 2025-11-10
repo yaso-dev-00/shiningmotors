@@ -1,0 +1,135 @@
+
+// Sample data for vehicles
+
+export const featuredVehicles = [
+  {
+    id: "vehicle1",
+    title: "2023 Porsche 911 GT3",
+    price: 189950,
+    image: "https://images.unsplash.com/photo-1503376780353-7e6692767b70",
+    year: 2023,
+    mileage: 1250,
+    fuelType: "Petrol",
+    transmission: "PDK",
+    seats: 2,
+    location: "Los Angeles, CA",
+    isFeatured: true,
+      status:"available"
+  },
+  {
+    id: "vehicle2",
+    title: "2022 Mercedes-AMG GT Black Series",
+    price: 325000,
+    image: "https://images.unsplash.com/photo-1617814076367-b759c7d7e738",
+    year: 2022,
+    mileage: 3450,
+    fuelType: "Petrol",
+    transmission: "Automatic",
+    seats: 2,
+    location: "Miami, FL",
+    isFeatured: true,
+      status:"available"
+  },
+  {
+    id: "vehicle3",
+    title: "1967 Ford Mustang Shelby GT500",
+    price: 249500,
+    image: "https://images.unsplash.com/photo-1584345604476-8ec5f82d718c",
+    year: 1967,
+    mileage: 28500,
+    fuelType: "Petrol",
+    transmission: "Manual",
+    seats: 4,
+    location: "Dallas, TX",
+    isFeatured: true,
+    status:"available"
+  },
+  {
+    id: "vehicle4",
+    title: "2021 Ferrari SF90 Stradale",
+    price: 679000,
+    image: "https://images.unsplash.com/photo-1592853625511-ac9393dd14b8",
+    year: 2021,
+    mileage: 2100,
+    fuelType: "Hybrid",
+    transmission: "Automatic",
+    seats: 2,
+    location: "Beverly Hills, CA",
+    isFeatured: true,
+    status:"available"
+  },
+  {
+    id: "vehicle5",
+    title: "2022 Audi RS7 Sportback",
+    price: 128900,
+    image: "https://images.unsplash.com/photo-1603584173870-7f23fdae1b7a",
+    year: 2022,
+    mileage: 8500,
+    fuelType: "Petrol",
+    transmission: "Automatic",
+    seats: 5,
+    location: "Chicago, IL",
+    isFeatured: false,
+    status:"available"
+  },
+  {
+    id: "vehicle6",
+    title: "2023 Lamborghini Huracán STO",
+    price: 389000,
+    image: "https://images.unsplash.com/photo-1633509817627-5a3143a21352",
+    year: 2023,
+    mileage: 950,
+    fuelType: "Petrol",
+    transmission: "Automatic",
+    seats: 2,
+    location: "New York, NY",
+    isFeatured: true,
+    status:"available"
+  },
+];
+
+export const allVehicles = [
+  ...featuredVehicles,
+  {
+    id: "vehicle7",
+    title: "1970 Dodge Challenger R/T",
+    price: 159000,
+    image: "https://images.unsplash.com/photo-1612462766564-e02298480e47",
+    year: 1970,
+    mileage: 42500,
+    fuelType: "Petrol",
+    transmission: "Manual",
+    seats: 4,
+    location: "Nashville, TN",
+    isFeatured: false,
+    status:"available"
+  },
+  {
+    id: "vehicle8",
+    title: "2022 McLaren 765LT Spider",
+    price: 450000,
+    image: "https://images.unsplash.com/photo-1632559877601-95d0d2b1684d",
+    year: 2022,
+    mileage: 1800,
+    fuelType: "Petrol",
+    transmission: "Automatic",
+    seats: 2,
+    location: "San Francisco, CA",
+    isFeatured: false,
+    status:"available"
+  },
+  {
+    id: "vehicle9",
+    title: "2020 Bentley Continental GT",
+    price: 195000,
+    image: "https://images.unsplash.com/photo-1580414057403-c5f451f30e1c",
+    year: 2020,
+    mileage: 12500,
+    fuelType: "Petrol",
+    transmission: "Automatic",
+    seats: 4,
+    location: "Seattle, WA",
+    isFeatured: false,
+    status:"available"
+  },
+];
