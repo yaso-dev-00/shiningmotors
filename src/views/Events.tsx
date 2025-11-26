@@ -1,100 +1,48 @@
 
+"use client";
+
 import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Layout from "@/components/Layout";
 import EventsGrid from "@/components/events/EventsGrid";
 import EventCategories from "@/components/events/EventCategories";
 import { EventSlideshow } from "@/components/events/EventSlideshow";
-import { 
-  getFeaturedEvents, 
-  getEventCategories, 
-  getUpcomingEvents, 
-  getPastEvents
-} from "@/integrations/supabase/modules/eventAppPage";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Calendar, Clock, Filter} from "lucide-react";
-import { shopApi, vehiclesApi } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import HorizontalScroll from "@/components/homepage/HorizontalScroll";
 import { ProductCardWrapper } from "@/components/shop/ProductCardWrapper";
 import { motion } from "framer-motion";
 import NextLink from "next/link";
 import { VehicleCardWrapper } from "@/components/vehicles/VehicleCardWrapper";
-import { getServiceByCategory, ServicePost } from "@/integrations/supabase/modules/services";
+import { ServicePost } from "@/integrations/supabase/modules/services";
 import ServicePostsCarousel, { parseServiceContent } from "@/components/services/ServicePostsCarousel";
 import type { Product } from "@/integrations/supabase/modules/shop";
 import type { ExtendedVehicle } from "@/integrations/supabase/modules/vehicles";
-const Events = () => {
-  const [activeTab, setActiveTab] = useState("upcoming");
-  
-  // Fetch featured events for slideshow
-  const { data: featuredEvents = [] } = useQuery({
-    queryKey: ["featuredEvents"],
-    queryFn: () => getFeaturedEvents(3)
-  });
-  
-  // Fetch event categories
-  const { data: categories = [] } = useQuery({
-    queryKey: ["eventCategories"],
-    queryFn: getEventCategories
-  });
-  
-  // Fetch upcoming events
-  const { data: upcomingEvents = [], isLoading: loadingUpcoming } = useQuery({
-    queryKey: ["upcomingEvents"],
-    queryFn: () => getUpcomingEvents(20),
-    enabled: activeTab === "upcoming"
-  });
-  
-  // Fetch past events
-  const { data: pastEvents = [], isLoading: loadingPast } = useQuery({
-    queryKey: ["pastEvents"],
-    queryFn: () => getPastEvents(20),
-    enabled: activeTab === "past"
-  });
-  const { data: featuredProducts, isLoading: isLoadingProducts } = useQuery({
-    queryKey: ['featuredProducts'],
-    queryFn: async () => {
-      const { data, error } = await shopApi.products.getFiltered({category:"performance-racing-parts",sortBy: 'newest', page: 1, pageSize: 10 });
-      if (error) throw error;
-      return data || [];
-    }
-  });
 
-  const { data: featuredVehicles, isLoading: isLoadingVehicles } = useQuery({
-      queryKey: ['featuredVehicles'],
-      queryFn: async () => {
-        const { data, error } = await vehiclesApi.vehicles.getByCategory("performance-racing");
-        if (error) throw error;
-        return data || [];
-      }
-    });
- 
-    const { data: performance, isLoading } = useQuery({
-      queryKey: ['service',"performance"],
-      queryFn: async () => {
-        try {
-          // Try to fetch from API
-          const { data, error } = await getServiceByCategory("customization")
-          if (error) throw error;
-          console.log(data)
-          // Filter by category if we have a valid category
-          // if (data && category) {
-          //   return data.filter(post => 
-          //     post.tags?.some(tag => tag === category || tag.includes(category))
-          //   );
-          // }
-          
-          return data || [];
-        } catch (error: unknown) {
-          console.error("Error fetching service posts:", error);
-          toast.error("Failed to load services. Please try again later.");
-          return [];
-        }
-      },
-      enabled: true
-    });
+interface EventsProps {
+  featuredEvents: any[];
+  categories: string[];
+  upcomingEvents: any[];
+  pastEvents: any[];
+  featuredProducts: Product[];
+  featuredVehicles: ExtendedVehicle[];
+  performanceServices: ServicePost[];
+}
+
+const Events = ({
+  featuredEvents,
+  categories,
+  upcomingEvents,
+  pastEvents,
+  featuredProducts,
+  featuredVehicles,
+  performanceServices,
+}: EventsProps) => {
+  const [activeTab, setActiveTab] = useState("upcoming");
+  const isLoadingProducts = false;
+  const isLoadingVehicles = false;
+  const isLoading = false;
   
   return (
     <Layout>
@@ -135,23 +83,11 @@ const Events = () => {
                 </TabsList>
                 
                 <TabsContent value="upcoming" className="mt-6">
-                  {loadingUpcoming ? (
-                    <div className="flex justify-center py-8">
-                      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sm-red"></div>
-                    </div>
-                  ) : (
                     <EventsGrid events={upcomingEvents} />
-                  )}
                 </TabsContent>
                 
                 <TabsContent value="past" className="mt-6">
-                  {loadingPast ? (
-                    <div className="flex justify-center py-8">
-                      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sm-red"></div>
-                    </div>
-                  ) : (
                     <EventsGrid events={pastEvents} />
-                  )}
                 </TabsContent>
               </Tabs>
               
@@ -337,7 +273,7 @@ const Events = () => {
               >
                 <ServicePostsCarousel
                   title="Customization & Performance"
-                  posts={performance?.slice(0, 10).map((post: ServicePost) => ({
+                  posts={performanceServices?.slice(0, 10).map((post: ServicePost) => ({
                     ...parseServiceContent(post),
                     category: post.category || '',
                   })) || []}

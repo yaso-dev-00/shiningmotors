@@ -1,4 +1,6 @@
+ "use client";
 import { useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   wishlistApi,
@@ -30,6 +32,7 @@ export const useWishlist = () => {
   );
   const [loading, setLoading] = useState(false);
   const mountedRef = useRef(false);
+  const pathname = usePathname();
 
   const fetchWishlist = async () => {
     if (!user) return;
@@ -153,16 +156,28 @@ export const useWishlist = () => {
 
   useEffect(() => {
     if (user) {
-      // Serve cache if present for this user
+      // Only auto-fetch wishlist on the dedicated wishlist page
+      const isWishlistPage = pathname?.startsWith("/wishlist");
+
+      if (!isWishlistPage) {
+        // On other pages, just serve any existing cache and avoid API calls
+        if (cacheForUserId === user.id && wishlistCache.length > 0) {
+          setWishlistItems(wishlistCache);
+        }
+        return;
+      }
+
+      // On /wishlist, ensure data is loaded
       if (cacheForUserId === user.id && wishlistCache.length > 0) {
         setWishlistItems(wishlistCache);
         return;
       }
+
       fetchWishlist();
     } else {
       setWishlistItems([]);
     }
-  }, [user]);
+  }, [user, pathname]);
 
   return {
     wishlistItems,

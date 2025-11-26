@@ -183,6 +183,17 @@ const ServiceEdit = () => {
 
       if (!success) throw error;
 
+      // Trigger revalidation for services SSG/ISR
+      try {
+        await fetch("/api/services/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, action: "update" }),
+        });
+      } catch (revalidateError) {
+        console.error("Error triggering services revalidation:", revalidateError);
+      }
+
       toast({
         title: "Success",
         description: "Service updated successfully",

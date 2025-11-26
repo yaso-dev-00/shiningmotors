@@ -14,7 +14,18 @@ const EventCreate = () => {
 
   const mutation = useMutation({
     mutationFn: (data: EventFormData) => createEvent(data),
-    onSuccess: () => {
+    onSuccess: async (createdEvent) => {
+      // Trigger on-demand revalidation for the /events page and cached event data
+      try {
+        await fetch("/api/events/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: createdEvent?.id, action: "create" }),
+        });
+      } catch (error) {
+        console.error("Failed to revalidate events after create:", error);
+      }
+
       toast({
         title: "Event created",
         description: "Your event has been created successfully",

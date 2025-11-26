@@ -44,7 +44,7 @@ const ServiceCard = ({
 }: ServiceCardProps) => {
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
-  
+  console.log(provider)
   // Get category details if available
   const categoryData = category ? getCategoryById(category) : null;
   

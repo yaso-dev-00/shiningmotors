@@ -12,7 +12,6 @@ import Footer from "@/components/Footer";
 import { useToast } from "@/hooks/use-toast";
 import { shopApi } from "@/integrations/supabase/modules/shop";
 import { useCart } from "@/contexts/CartContext";
-import { toast as toaster } from "sonner";
 const ProductDetail = () => {
   const params = useParams();
   const id = (params?.id as string) ?? "";
@@ -74,8 +73,6 @@ console.log(product)
       price:product.price,
       images:product.images,
     }, 1);
-    
-    toaster.success("Product added to cart!");
   };
 
   return (

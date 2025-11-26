@@ -83,7 +83,18 @@ const EventManagement = () => {
   // Delete event mutation
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteEvent(id),
-    onSuccess: () => {
+    onSuccess: async (_result, id) => {
+      // Trigger on-demand revalidation for the /events page and cached event data
+      try {
+        await fetch("/api/events/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, action: "delete" }),
+        });
+      } catch (error) {
+        console.error("Failed to revalidate events after delete:", error);
+      }
+
       queryClient.invalidateQueries({ queryKey: ["events"] });
       toast({
         title: "Event deleted",

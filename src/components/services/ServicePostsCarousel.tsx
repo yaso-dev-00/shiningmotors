@@ -18,10 +18,10 @@ interface Service{
   location: string;
   media_url?: string;
   category: string; // Added category prop
-  provider: {
-    name: string;
-    avatar: string;
-  };
+  // provider: {
+  //   name: string;
+  //   avatar: string;
+  // };
 }
 interface ServicePostsCarouselProps {
   posts: Service[],
@@ -68,7 +68,7 @@ export const parseServiceContent = (post: ServicePost) => {
 
 const ServicePostsCarousel = ({ posts, title, isLoading, categoryId, viewAllLink }: ServicePostsCarouselProps) => {
   const router = useRouter();
-  
+  console.log(posts,"posts")
   if (isLoading) {
     return (
       <div className="py-6">
@@ -115,7 +115,7 @@ const ServicePostsCarousel = ({ posts, title, isLoading, categoryId, viewAllLink
           ></motion.div>
           <h2 className="text-[20px] md:text-2xl font-bold text-gray-800">{title}</h2>
         </div>
-        <motion.div
+      {viewAllLink && <motion.div
           whileHover={{ scale: 1.05, x: 5 }}
           whileTap={{ scale: 0.95 }}
         >
@@ -127,7 +127,7 @@ const ServicePostsCarousel = ({ posts, title, isLoading, categoryId, viewAllLink
             View All 
             <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
           </Button>
-        </motion.div>
+        </motion.div>}
       </div>
       
       {/* <Carousel
@@ -159,7 +159,7 @@ const ServicePostsCarousel = ({ posts, title, isLoading, categoryId, viewAllLink
           <CarouselNext className="-right-4 bg-white shadow-md hover:bg-gray-50 border border-gray-200" />
         </div>
       </Carousel> */}
-
+  
 <HorizontalScrollServices padding="px-0 md:px-4">
                       {isLoading ? (
                            Array(4)

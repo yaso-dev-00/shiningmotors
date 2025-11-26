@@ -11,7 +11,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Heart,
   MessageSquare,
-  Bookmark,
   Send,
   MoreHorizontal,
   Check,
@@ -137,7 +136,6 @@ const PostCardForHomePage = ({
   onPostReported,
 }: PostCardProps) => {
   const [isLiked, setIsLiked] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
   const [likesCount, setLikesCount] = useState(likes);
   const [commentsCount, setCommentsCount] = useState(0);
   const { isAuthenticated, user } = useAuth();
@@ -145,7 +143,6 @@ const PostCardForHomePage = ({
   const { toast } = useToast();
   const router = useRouter();
   const [likeAnim, setLikeAnim] = useState(false);
-  const [saveAnim, setSaveAnim] = useState(false);
   const [likesAnim, setLikesAnim] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
@@ -206,25 +203,9 @@ const PostCardForHomePage = ({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  useEffect(() => {
-    const checkFollowingStatus = async () => {
-      if (!user || !author.id || user.id === author.id) return;
-
-      try {
-        const { data } = await socialApi.follows.checkIfFollowing(
-          user.id,
-          author.id
-        );
-        if (data) {
-          setIsFollowing(true);
-        }
-      } catch (error) {
-        console.error("Error checking following status:", error);
-      }
-    };
-
-    checkFollowingStatus();
-  }, [user, author.id]);
+  // Note: We intentionally avoid fetching follow status on the homepage to
+  // reduce extra Supabase calls for 'user_follows'. Follow/unfollow actions
+  // are still available on dedicated social/profile pages.
 
   const enableAutoplay = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -429,26 +410,6 @@ const PostCardForHomePage = ({
       }
     };
 
-    const checkSaveStatus = async () => {
-      if (!isAuthenticated || !user) return;
-
-      try {
-        const { data, error } = await supabase
-          .from("saved_post")
-          .select()
-          .eq("post_id", id)
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (!error && data) {
-          setIsSaved(true);
-        }
-      } catch (error) {
-        console.error("Error checking saved status:", error);
-      }
-    };
-
-    checkSaveStatus();
     checkLikeStatus();
   }, [id, isAuthenticated, user]);
 
@@ -503,56 +464,6 @@ const PostCardForHomePage = ({
     const timeout = setTimeout(() => setLikesAnim(false), 300);
     return () => clearTimeout(timeout);
   }, [likesAnim]);
-
-  const handleSaveToggle = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsSaved(!isSaved);
-    setSaveAnim(true);
-
-    toast({
-      description: isSaved
-        ? "Removed from saved items"
-        : "Added to saved items",
-    });
-
-    if (!isAuthenticated) {
-      router.push("/auth" as any);
-      return;
-    }
-
-    if (!user) return;
-
-    try {
-      if (isSaved) {
-        await supabase
-          .from("saved_post")
-          .delete()
-          .eq("post_id", id)
-          .eq("user_id", user.id);
-      } else {
-        await supabase.from("saved_post").insert({
-          post_id: id,
-          user_id: user.id,
-        });
-      }
-
-      setIsSaved(!isSaved);
-    } catch (error) {
-      console.error("Error toggling like:", error);
-      toast({
-        description: isSaved
-          ? "Removed from saved items"
-          : "Added to saved items",
-        variant: "destructive",
-      });
-    }
-  };
-
-  useEffect(() => {
-    if (!saveAnim) return;
-    const timeout = setTimeout(() => setSaveAnim(false), 300);
-    return () => clearTimeout(timeout);
-  }, [saveAnim]);
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -625,49 +536,8 @@ const PostCardForHomePage = ({
   };
 
   const [alignments, setAlignments] = useState<string[]>([]);
-  const handleFollow = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!isAuthenticated) {
-      router.push("/auth" as any);
-      return;
-    }
-
-    try {
-      if (user?.id && author.id) {
-        await socialApi.follows.followUser(user.id, author.id);
-      }
-      setIsFollowing(true);
-      toast({ description: `You're now following ${displayName}` });
-    } catch (error) {
-      console.error("Follow failed:", error);
-      toast({
-        description: "Failed to follow user",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleUnfollow = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!isAuthenticated) {
-      router.push("/auth" as any);
-      return;
-    }
-
-    try {
-      if (user?.id && author.id) {
-        await socialApi.follows.unfollowUser(user.id, author.id);
-      }
-      setIsFollowing(false);
-      toast({ description: `You've unfollowed ${displayName}` });
-    } catch (error) {
-      console.error("Unfollow failed:", error);
-      toast({
-        description: "Failed to unfollow user",
-        variant: "destructive",
-      });
-    }
-  };
+  // Follow/unfollow actions are disabled on the homepage to avoid extra
+  // 'user_follows' traffic. They remain available on social pages.
 
   const handleMetadataLoadedMultiple = (
     e: React.SyntheticEvent<HTMLVideoElement>,
@@ -987,31 +857,6 @@ const PostCardForHomePage = ({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {user &&
-                user.id !== author.id &&
-                (isFollowing ? (
-                  <DropdownMenuItem onClick={handleUnfollow}>
-                    Unfollow
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem onClick={handleFollow}>
-                    Follow
-                  </DropdownMenuItem>
-                ))}
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsSaved(!isSaved);
-                  toast({
-                    description: isSaved
-                      ? "Removed from saved items"
-                      : "Added to saved items",
-                  });
-                }}
-              >
-                {isSaved ? "Unsave" : "Save post"}
-              </DropdownMenuItem>
-
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1426,14 +1271,6 @@ const PostCardForHomePage = ({
             </button>
           </div>
 
-          <button
-            className={`flex items-center gap-1 ${
-              isSaved ? "text-blue-500" : ""
-            } ${saveAnim ? "pop-animate" : ""}`}
-            onClick={handleSaveToggle}
-          >
-            <Bookmark size={22} className={isSaved ? "fill-current" : ""} />
-          </button>
         </div>
 
         {/* Likes count */}

@@ -116,6 +116,17 @@ console.log(errors,values)
 
       if (error) throw error;
 
+      // Trigger revalidation for services SSG/ISR
+      try {
+        await fetch("/api/services/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: data?.id, action: "create" }),
+        });
+      } catch (revalidateError) {
+        console.error("Error triggering services revalidation:", revalidateError);
+      }
+
       toast({
         title: "Success",
         description: "Service created successfully",

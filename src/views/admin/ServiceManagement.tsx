@@ -77,6 +77,18 @@ const ServiceManagement = () => {
 
       // Remove the service from the list
       setServices((prev) => prev.filter((service) => service.id !== id));
+
+      // Trigger revalidation for services SSG/ISR
+      try {
+        await fetch("/api/services/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, action: "delete" }),
+        });
+      } catch (revalidateError) {
+        console.error("Error triggering services revalidation:", revalidateError);
+      }
+
       toast({
         title: "Success",
         description: "Service deleted successfully",

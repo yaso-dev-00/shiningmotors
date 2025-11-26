@@ -8,6 +8,7 @@ import GlobalProvider from "@/contexts/GlobalContext";
 import { NotificationProvider } from "@/components/notifications/NotificationProvider";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import ProgressBar from "@/components/ProgressBar";
 import React from "react";
 
 // Create a singleton QueryClient that's always available
@@ -53,6 +54,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           <NotificationProvider>
             <CartProvider>
               <GlobalProvider>
+                <ProgressBar />
                 {children}
                 <Toaster />
                 <Sonner />

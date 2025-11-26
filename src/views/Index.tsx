@@ -472,7 +472,7 @@ const Index = ({ initialData }: IndexProps) => {
 
         {/* CTA Section */}
         <section className="relative py-16 md:py-24 text-white">
-          <div className="absolute inset-0 z-0 relative">
+          <div className="absolute inset-0 z-0">
             <Image
               src="https://images.unsplash.com/photo-1580273916550-e323be2ae537"
               alt="Car workshop"

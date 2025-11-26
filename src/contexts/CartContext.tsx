@@ -577,6 +577,7 @@ export const CartProvider = ({ children }: CartProviderProps) => {
 
     if (isAuthenticated && user) {
       try {
+        let addedNewItem = false;
         // Check if item is already in cart
         const existingItem = cartItems.find(
           (item) => item.product_id === product.id
@@ -625,11 +626,12 @@ export const CartProvider = ({ children }: CartProviderProps) => {
             };
 
             setCartItems((prev) => [...prev, newItem]);
+            addedNewItem = true;
           }
         }
         await fetchCartItems();
         toast({
-          description: "Product added to cart",
+          description: addedNewItem ? "Product added to cart" : "Cart updated",
         });
       } catch (error) {
         console.error("Error adding to cart:", error);
@@ -670,7 +672,8 @@ export const CartProvider = ({ children }: CartProviderProps) => {
       }
 
       toast({
-        description: "Product added to cart",
+        description:
+          existingItemIndex >= 0 ? "Cart updated" : "Product added to cart",
       });
     }
   };

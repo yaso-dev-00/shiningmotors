@@ -1,5 +1,5 @@
  "use client";
- 
+
 import { useState, useEffect,useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Layout } from "@/components/Layout";
@@ -8,14 +8,11 @@ import ServicePosts from "@/components/services/ServicePosts";
 import ServicePostsCarousel from "@/components/services/ServicePostsCarousel";
 import ServiceHeroCarousel from "@/components/services/ServiceHeroCarousel";
 import { serviceCategories, getCategoryById } from "@/data/serviceCategories";
-import { useQuery } from "@tanstack/react-query";
-import { socialApi } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import NextLink from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { getAllServices, getServiceByCategory, ServicePost } from "@/integrations/supabase/modules/services";
+import type { ServicePost } from "@/integrations/supabase/modules/services";
 import { parseServiceContent } from "@/components/services/ServicePostsCarousel";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -263,72 +260,23 @@ const generateSamplePosts = () => {
   return samplePosts;
 };
 
-const Services = () => {
+interface ServicesProps {
+  initialAllServices: (ServicePost | any)[];
+  initialGeneralMaintenance: ServicePost[];
+}
+
+const Services = ({ initialAllServices, initialGeneralMaintenance }: ServicesProps) => {
   const { toast } = useToast();
   const pathname = usePathname();
   const router = useRouter();
   
   const [priceRange, setPriceRange] = useState([0, 100]);
-  
-  // Get category from URL if present
-  
-   
-  
-  // Fetch posts for all services (or use sample data)
-  const { data: allServicePosts, isLoading: isLoadingAllPosts } = useQuery({
-    queryKey: ['services'],
-    queryFn: async () => {
-      try {
-        // Try to fetch from API
-        const { data, error } = await getAllServices()
-        if (error) throw error;
-        
-        // If no data or empty, return sample data
-        if (!data || data.length === 0) {
-          return generateSamplePosts();
-        }
-        
-        return data;
-      } catch (error) {
-        // On error, return sample data
-        console.error("Error fetching service posts:", error);
-        toast({
-          title: "Using sample data",
-          description: "Showing sample service posts for demonstration",
-        });
-        return generateSamplePosts();
-      }
-    }
-  });
 
-   const { data: GeneralMaintenance, isLoading } = useQuery({
-      queryKey: ['service',"general-maintenance"],
-      queryFn: async () => {
-        try {
-          // Try to fetch from API
-          const { data, error } = await getServiceByCategory("general-maintenance")
-          if (error) throw error;
-          console.log(data)
-          // Filter by category if we have a valid category
-          // if (data && category) {
-          //   return data.filter(post => 
-          //     post.tags?.some(tag => tag === category || tag.includes(category))
-          //   );
-          // }
-          
-          return data || [];
-        } catch (error) {
-          console.error("Error fetching service posts:", error);
-          toast({
-            title: "Error loading services",
-            description: "Failed to load services. Please try again later.",
-            variant: "destructive"
-          });
-          return [];
-        }
-      },
-      enabled: true
-    });
+  // Service data from server (SSG/ISR)
+  const [allServicePosts] = useState<(ServicePost | any)[]>(initialAllServices || []);
+  const [GeneralMaintenance] = useState<ServicePost[]>(initialGeneralMaintenance || []);
+  const isLoadingAllPosts = false;
+  const isLoading = false;
   
   // Navigate to category page when a category is selected
   const handleCategoryClick = (categoryId: string) => {
@@ -460,8 +408,9 @@ const Services = () => {
             <div className="mt-6">
                <ServicePostsCarousel
                       title={"General Maintenance"}
-                      posts={(GeneralMaintenance || []).map((post: ServicePost) => ({
-                        ...parseServiceContent(post),
+                      posts={(GeneralMaintenance.slice(0,10) || []).map((post: ServicePost) => ({
+                          // ...parseServiceContent(post),
+                          ...post as any,
                         category: post.category || "general-maintenance"
                       }))}
                       isLoading={isLoading}
@@ -507,12 +456,12 @@ const Services = () => {
                   posts={(allServicePosts?.slice(0, 10) || []).map((post: ServicePost | any) => {
                     if ('provider' in post) return post;
                     return {
-                      ...parseServiceContent(post as ServicePost),
+                      ...post,
                       category: (post as ServicePost).category || "service"
                     };
                   })}
                   isLoading={isLoadingAllPosts}
-                  viewAllLink="/services"
+                  // viewAllLink="/services"
                 />
               </motion.div>
               
@@ -533,12 +482,13 @@ const Services = () => {
                     .map((post: ServicePost | any) => {
                       if ('provider' in post) return post;
                       return {
-                        ...parseServiceContent(post as ServicePost),
+                        // ...parseServiceContent(post as ServicePost),
+                        ...post,
                         category: (post as ServicePost).category || "service"
                       };
                     })}
                   isLoading={isLoadingAllPosts}
-                  viewAllLink="/services"
+                  // viewAllLink="/services"
                 />
               </motion.div>
 

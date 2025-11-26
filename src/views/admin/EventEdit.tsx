@@ -31,7 +31,18 @@ const EventEdit = () => {
       if (!id) throw new Error("Event ID is required");
       return updateEvent(id, data);
     },
-    onSuccess: () => {
+    onSuccess: async (updatedEvent) => {
+      // Trigger on-demand revalidation for the /events page and cached event data
+      try {
+        await fetch("/api/events/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: updatedEvent?.id ?? id, action: "update" }),
+        });
+      } catch (error) {
+        console.error("Failed to revalidate events after update:", error);
+      }
+
       toast({
         title: "Event updated",
         description: "Your event has been updated successfully",

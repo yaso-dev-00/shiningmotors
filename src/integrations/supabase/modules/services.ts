@@ -110,7 +110,7 @@ export const getAllServices = async (): Promise<{
       console.error("Error fetching services:", error);
       return { data: null, error };
     }
-
+    
     return { data, error: null };
   } catch (error) {
     console.error("Error fetching services:", error);

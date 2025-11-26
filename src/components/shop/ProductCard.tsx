@@ -1,10 +1,8 @@
 
-import { useState } from "react";
-import { Heart, ShoppingCart } from "lucide-react";
+import { ShoppingCart } from "lucide-react";
 import NextLink from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
 import { useCart } from "@/contexts/CartContext";
 import { WishlistButton } from "../ui/WishlistButton";
 import Image from "next/image";
@@ -30,7 +28,6 @@ const ProductCard = ({
   isNew = false,
   isSale = false,
 }: ProductCardProps) => {
-  const [isWishlist, setIsWishlist] = useState(false);
   const { addToCart } = useCart();
   
   const handleAddToCart = async () => {
@@ -41,17 +38,6 @@ const ProductCard = ({
       price,
       images: [image],
     }, 1);
-    
-    toast.success("Product added to cart!");
-  };
-
-  const toggleWishlist = () => {
-    setIsWishlist(!isWishlist);
-    if (!isWishlist) {
-      toast.success("Product added to wishlist!");
-    } else {
-      toast.success("Product removed from wishlist!");
-    }
   };
 
   const formatPrice = (amount: number) => {

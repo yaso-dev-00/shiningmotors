@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 // Basic auth check using Supabase cookies (sb-access-token)
+// Note: In Next.js 16, cookies in proxy are still accessed synchronously
+// Only route handlers and server components use async cookies
 function isAuthenticated(req: NextRequest): boolean {
   const access = req.cookies.get('sb-access-token')?.value;
   return Boolean(access);
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const protectedPaths: RegExp[] = [
@@ -42,7 +44,5 @@ export const config = {
     '/settings',
   ],
 };
-
-
 
 
