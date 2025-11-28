@@ -62,7 +62,22 @@ const SimProductManagement = () => {
         title: "Product deleted",
         description: "The product has been successfully deleted.",
       });
-      
+
+      // Trigger revalidation for sim-racing SSG/ISR
+      try {
+        await fetch("/api/sim-racing/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: productToDelete,
+            entityType: "product",
+            action: "delete",
+          }),
+        });
+      } catch (revalidateError) {
+        console.error("Error triggering sim-racing revalidation (product delete):", revalidateError);
+      }
+
       refetch();
     } catch (error) {
       console.error("Error deleting product:", error);

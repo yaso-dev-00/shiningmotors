@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -73,7 +73,11 @@ const SimLeagueEdit = () => {
   const isEditing = !!id;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
-   const {user}=useAuth()
+  const { user } = useAuth();
+  const isVendorContext =
+    typeof window !== "undefined" &&
+    window.location.pathname.includes("/vendor/");
+  const isInitializingRef = useRef(false);
    
   // Fetch league data if editing
   const { data: league, isLoading } = useQuery({
@@ -98,7 +102,7 @@ const SimLeagueEdit = () => {
       start_date: "",
       end_date: "",
       platform: "iracing", // Default value
-      registration_type: "open", // Default value
+      registration_type: league?.registration_type || "open", // Default value
       max_participants: "",
       points_system: undefined,
     },
@@ -106,18 +110,29 @@ const SimLeagueEdit = () => {
 
   // Update form values when league data is loaded
   useEffect(() => {
-
     if (league) {
+      isInitializingRef.current = true;
+      const registrationType = (league.registration_type && 
+        ["solo", "team", "invitation_only", "open"].includes(league.registration_type))
+        ? league.registration_type 
+        : "open";
+    
+      // Reset form
       form.reset({
         name: league.name || "",
         description: league.description || "",
-        platform: league.platform || "iracing",
-        registration_type: league.registration_type || "open",
+        platform: (league.platform || "iracing") as "iracing" | "assetto_corsa" | "rfactor2" | "automobilista" | "project_cars" | "gran_turismo" | "forza" | "other",
+        registration_type: registrationType as "solo" | "team" | "invitation_only" | "open",
         max_participants: league.max_participants?.toString() || "",
         start_date: league.start_date ? new Date(league.start_date).toISOString().split('T')[0] : "",
         end_date: league.end_date ? new Date(league.end_date).toISOString().split('T')[0] : "",
         points_system: league.points_system ? (typeof league.points_system === 'string' ? league.points_system : JSON.stringify(league.points_system)) : "",
       });
+      
+      // Reset the flag after a short delay to allow form to settle
+      setTimeout(() => {
+        isInitializingRef.current = false;
+      }, 100);
     }
   }, [league, form]);
 
@@ -144,12 +159,15 @@ const SimLeagueEdit = () => {
     try {
       setIsSubmitting(true);
       
+      // Get the current form value for registration_type to ensure it's captured
+      const currentRegistrationType = form.getValues("registration_type") || values.registration_type || "open";
+      
       // Convert form values to league data
       const leagueData: Partial<SimLeague> = {
         name: values.name,
         description: values.description,
         platform: values.platform,
-        registration_type: values.registration_type,
+        registration_type: currentRegistrationType as "solo" | "team" | "invitation_only" | "open",
         start_date: values.start_date,
         end_date: values.end_date,
         max_participants: values.max_participants ? parseInt(values.max_participants, 10) : null,
@@ -169,15 +187,55 @@ const SimLeagueEdit = () => {
           title: "League Updated",
           description: "The league has been successfully updated.",
         });
+
+        // Trigger revalidation for sim-racing SSG/ISR
+        try {
+          await fetch("/api/sim-racing/revalidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: stringId,
+              entityType: "league",
+              action: "update",
+            }),
+          });
+        } catch (revalidateError) {
+          console.error(
+            "Error triggering sim-racing revalidation (league update):",
+            revalidateError
+          );
+        }
       } else {
-        await simRacingApi.leagues.create(leagueData as any);
+        const { error } = await simRacingApi.leagues.create(leagueData as any);
+        if (error) throw error;
+
         toast({
           title: "League Created",
           description: "The new league has been successfully created.",
         });
+
+        // Trigger revalidation for sim-racing SSG/ISR
+        try {
+          await fetch("/api/sim-racing/revalidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              // No specific detail page yet; revalidate listing and /sim-racing
+              entityType: "league",
+              action: "create",
+            }),
+          });
+        } catch (revalidateError) {
+          console.error(
+            "Error triggering sim-racing revalidation (league create):",
+            revalidateError
+          );
+        }
       }
 
-      router.push("/admin/sim-leagues" as any);
+      router.push(
+        (isVendorContext ? "/vendor/simleague-management" : "/admin/sim-leagues") as any
+      );
     } catch (error) {
       console.error("Error saving league:", error);
       toast({
@@ -203,7 +261,9 @@ const SimLeagueEdit = () => {
   return (
     <AdminLayout 
       title={isEditing ? "Edit Sim Racing League" : "Create Sim Racing League"}
-      backLink="/admin/sim-leagues"
+      backLink={
+        isVendorContext ? "/vendor/simleague-management" : "/admin/sim-leagues"
+      }
     >
       <Card>
         <CardContent className="pt-6">
@@ -232,24 +292,33 @@ const SimLeagueEdit = () => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Platform*</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        value={field.value}
-                      >
-                        <FormControl>
+                      <FormControl>
+                        <Select
+                          onValueChange={(value) => {
+                            // Prevent onChange from firing during form initialization
+                            if (isInitializingRef.current) {
+                              return;
+                            }
+                            // Only update if value is not empty and is a valid option
+                            if (value && ["iracing", "assetto_corsa", "rfactor2", "automobilista", "project_cars", "gran_turismo", "forza", "other"].includes(value)) {
+                              field.onChange(value);
+                              field.onBlur();
+                            }
+                          }}
+                          value={field.value || "iracing"}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select platform" />
                           </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {platformOptions.map(option => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                          <SelectContent>
+                            {platformOptions.map(option => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -262,24 +331,33 @@ const SimLeagueEdit = () => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Registration Type*</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        value={field.value}
-                      >
-                        <FormControl>
+                      <FormControl>
+                        <Select
+                          onValueChange={(value) => {
+                            // Prevent onChange from firing during form initialization
+                            if (isInitializingRef.current) {
+                              return;
+                            }
+                            // Only update if value is not empty and is a valid option
+                            if (value && ["solo", "team", "invitation_only", "open"].includes(value)) {
+                              field.onChange(value);
+                              field.onBlur();
+                            }
+                          }}
+                          value={field.value || "open"}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select registration type" />
                           </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {registrationTypeOptions.map(option => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                          <SelectContent>
+                            {registrationTypeOptions.map(option => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

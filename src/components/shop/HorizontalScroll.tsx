@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-
+import Image from "next/image";
 // Function to get random image
 const getRandomImage = (randomImages: string[]) =>
   randomImages[Math.floor(Math.random() * randomImages.length)];
@@ -11,9 +11,9 @@ const getRandomImage = (randomImages: string[]) =>
 export default function CategoryScroller({categories,randomImages,route}:{categories:{value:string,label:string}[],randomImages:string[],route:string}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-   const categoriesWithImage=categories.map((category) => ({
+   const categoriesWithImage=categories.map((category,index) => ({
     ...category,
-    image: getRandomImage(randomImages),
+    image: randomImages[index>randomImages.length-1 ? Math.floor(Math.random() * randomImages.length) : index],
   }));
   const scroll = (dir: "left" | "right") => {
     if (scrollRef.current) {
@@ -48,11 +48,13 @@ export default function CategoryScroller({categories,randomImages,route}:{catego
             onClick={() => router.push((`/${route}/category/${cat.value}`) as any)}
             className="min-w-[130px] md:min-w-[160px] w-[120px] md:w-[160px] bg-white shadow-md rounded-xl cursor-pointer overflow-hidden flex-shrink-0"
           >
-          <img
-  src={cat.image}
-  alt={cat.label}
-  className="w-full h-[70px] md:h-32 object-cover"
-/>
+          <Image
+            src={cat.image}
+            alt={cat.label}
+            className="w-full h-[70px] md:h-32 object-cover"
+           width={100}
+           height={100}
+          />
             <div className="box-border p-1 md:p-2 flex text-center items-center justify-center">
               <div className="text-sm font-medium text-ellipsis line-clamp-2 ">{cat.label}</div>
             </div>

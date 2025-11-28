@@ -64,6 +64,24 @@ const SimEventManagement = () => {
     try {
       await simRacingApi.events.delete(selectedEventId);
       refetch();
+
+      // Trigger revalidation for sim-racing SSG/ISR
+      try {
+        await fetch("/api/sim-racing/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: selectedEventId,
+            entityType: "event",
+            action: "delete",
+          }),
+        });
+      } catch (revalidateError) {
+        console.error(
+          "Error triggering sim-racing revalidation (event delete):",
+          revalidateError
+        );
+      }
     } catch (error) {
       console.error("Error deleting sim event:", error);
     }
@@ -82,7 +100,7 @@ const SimEventManagement = () => {
   };
 
   return (
-    <AdminLayout title="Sim Racing Events Management">
+    <AdminLayout title="Sim Racing Events Management" backLink="/admin/dashboard">
       <div className="flex flex-col md:flex-row justify-between gap-y-4 border md:border-0 py-4 border-gray-300 rounded-md px-4 md:px-1 w-full md:items-center mb-6">
         <div className="flex items-center gap-4 w-full">
            <Input

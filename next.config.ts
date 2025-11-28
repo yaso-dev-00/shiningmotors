@@ -11,6 +11,14 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'www.garimaglobal.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.pexels.com',
+      },
+      {
+        protocol: 'https',
         hostname: '**.supabase.co',
         pathname: '/storage/v1/object/public/**',
       },

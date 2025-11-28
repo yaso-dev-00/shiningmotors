@@ -18,6 +18,7 @@ interface Service{
   location: string;
   media_url?: string;
   category: string; // Added category prop
+  availability?: any;
   // provider: {
   //   name: string;
   //   avatar: string;
@@ -59,6 +60,7 @@ export const parseServiceContent = (post: ServicePost) => {
     duration: post.duration || '',
     location: post.location || 'Location not specified',
     media_url: post.media_urls?.[0] || '',
+    availability: post.availability as any,
     provider: {
       name: post.profile?.full_name || post.profile?.username || 'Unknown Provider',
       avatar: post.profile?.avatar_url || `https://avatars.dicebear.com/api/initials/${post.profile?.username || 'u'}.svg`,

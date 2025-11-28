@@ -169,22 +169,6 @@ const ServiceCategory = () => {
             categoryId={categoryId || ""}
             categoryName={categoryData?.name}
           />
-          
-          {/* Empty State */}
-          {servicePosts && servicePosts.length === 0 && !isLoading && (
-            <motion.div 
-              className="text-center py-16 bg-white rounded-xl shadow-sm"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
-              <h3 className="text-xl font-medium mb-2">No services available</h3>
-              <p className="text-gray-500 max-w-md mx-auto">
-                There are currently no services listed in the {categoryData?.name} category.
-                Check back later or explore other categories.
-              </p>
-            </motion.div>
-          )}
         </div>
       </div>
     </Layout>

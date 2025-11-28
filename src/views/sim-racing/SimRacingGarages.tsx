@@ -20,7 +20,7 @@ import { useRouter } from 'next/navigation';
 const SimRacingGarages = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
-  const [serviceFilter, setServiceFilter] = useState("");
+  const [serviceFilter, setServiceFilter] = useState("all");
   
   const { data: garages = [], isLoading } = useQuery({
     queryKey: ["allSimGarages"],

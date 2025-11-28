@@ -44,6 +44,9 @@ const SimGarageEdit = () => {
   const router = useRouter();
   const isEditing = !!id;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isVendorContext =
+    typeof window !== "undefined" &&
+    window.location.pathname.includes("/vendor/");
 
   // Fetch garage data if editing
   const { data: garage, isLoading } = useQuery({
@@ -120,15 +123,57 @@ const SimGarageEdit = () => {
           title: "Garage Updated",
           description: "The garage has been successfully updated.",
         });
+
+        // Trigger revalidation for sim-racing SSG/ISR
+        try {
+          await fetch("/api/sim-racing/revalidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id,
+              entityType: "garage",
+              action: "update",
+            }),
+          });
+        } catch (revalidateError) {
+          console.error(
+            "Error triggering sim-racing revalidation (garage update):",
+            revalidateError
+          );
+        }
       } else {
-        await simRacingApi.garages.create(garageData as any);
+        const { error } = await simRacingApi.garages.create(
+          garageData as any
+        );
+        if (error) throw error;
+
         toast({
           title: "Garage Created",
           description: "The new garage has been successfully created.",
         });
+
+        // Trigger revalidation for sim-racing SSG/ISR
+        try {
+          await fetch("/api/sim-racing/revalidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              // No specific detail page yet; revalidate listing and /sim-racing
+              entityType: "garage",
+              action: "create",
+            }),
+          });
+        } catch (revalidateError) {
+          console.error(
+            "Error triggering sim-racing revalidation (garage create):",
+            revalidateError
+          );
+        }
       }
 
-      router.push("/admin/sim-garages" as any);
+      router.push(
+        (isVendorContext ? "/vendor/simgarage-management" : "/admin/sim-garages") as any
+      );
     } catch (error: unknown) {
       console.error("Error saving garage:", error);
       toast({
@@ -154,7 +199,9 @@ const SimGarageEdit = () => {
   return (
     <AdminLayout 
       title={isEditing ? "Edit Sim Racing Garage" : "Create Sim Racing Garage"}
-      backLink="/admin/sim-garages"
+      backLink={
+        isVendorContext ? "/vendor/simgarage-management" : "/admin/sim-garages"
+      }
     >
       <Card>
         <CardContent className="pt-6">

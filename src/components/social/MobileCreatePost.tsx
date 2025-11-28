@@ -234,18 +234,10 @@ const MobileCreatePost = ({
             formData.append("cropWidth", mcCropParams[idx].cropWidth);
             formData.append("cropHeight", mcCropParams[idx].cropHeight);
             formData.append("userId", user.id);
-            const response = await fetch(
-              "https://shining-motors-backend-production.up.railway.app/api/crop",
-              {
-                method: "POST",
-                body: formData,
-                headers: {
-                  "Access-Control-Allow-Origin": "*",
-                  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-                  "Access-Control-Allow-Headers": "Content-Type",
-                },
-              }
-            );
+            const response = await fetch("/api/crop", {
+              method: "POST",
+              body: formData,
+            });
             if (!response.ok) throw new Error("Failed to crop video");
             const croppedVideoUrl = await response.json();
             return croppedVideoUrl.url;

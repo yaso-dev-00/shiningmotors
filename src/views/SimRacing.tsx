@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 
 import { Layout } from "@/components/Layout";
-import { useQuery } from "@tanstack/react-query";
 import { SimRacingSection } from "@/components/sim-racing/SimRacingSection";
 import { SimRacingHero } from "@/components/sim-racing/SimRacingHero";
 import { LeagueCard } from "@/components/sim-racing/LeagueCard";
@@ -10,7 +9,12 @@ import { EventCard } from "@/components/sim-racing/EventCard";
 import { ProductCard } from "@/components/sim-racing/ProductCard";
 import { GarageCard } from "@/components/sim-racing/GarageCard";
 import { LeaderboardCard } from "@/components/sim-racing/LeaderboardCard";
-import { simAppApi } from "@/integrations/supabase/modules/simAppPage";
+import type {
+  SimLeague,
+  SimEvent,
+  SimProduct,
+  SimGarage,
+} from "@/integrations/supabase/modules/simAppPage";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,95 +22,37 @@ import NextLink from "next/link";
 import { Button } from "@/components/ui/button";
 import { UserCircle } from "lucide-react";
 
-const SimRacing = () => {
+interface SimRacingProps {
+  leagues: SimLeague[];
+  events: SimEvent[];
+  products: SimProduct[];
+  garages: SimGarage[];
+  leaderboards: any[];
+  leaderboardEntries: any[];
+}
+
+const SimRacing = ({
+  leagues,
+  events,
+  products,
+  garages,
+  leaderboards,
+  leaderboardEntries,
+}: SimRacingProps) => {
   const [activeTab, setActiveTab] = useState("overview");
   const { isAuthenticated } = useAuth();
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
-  const { data: leagues = [], isLoading: isLeaguesLoading } = useQuery({
-    queryKey: ["simLeagues"],
-    queryFn: async () => {
-      const { data, error } = await simAppApi.leagues.getActiveLeagues();
-      if (error) {
-        console.error("Error fetching sim leagues:", error);
-        return [];
-      }
-      return data || [];
-    },
-  });
 
-  const { data: events = [], isLoading: isEventsLoading } = useQuery({
-    queryKey: ["simEvents"],
-    queryFn: async () => {
-      const { data, error } = await simAppApi.events.getUpcomingEvents(4);
-      if (error) {
-        console.error("Error fetching sim events:", error);
-        return [];
-      }
-      return data || [];
-    },
-  });
-
-  const { data: products = [], isLoading: isProductsLoading } = useQuery({
-    queryKey: ["simProducts"],
-    queryFn: async () => {
-      const { data, error } = await simAppApi.products.getFeaturedProducts();
-      if (error) {
-        console.error("Error fetching sim products:", error);
-        return [];
-      }
-      return data || [];
-    },
-  });
-
-  const { data: garages = [], isLoading: isGaragesLoading } = useQuery({
-    queryKey: ["simGarages"],
-    queryFn: async () => {
-      const { data, error } = await simAppApi.garages.getAllGarages();
-      if (error) {
-        console.error("Error fetching sim garages:", error);
-        return [];
-      }
-      return data || [];
-    },
-  });
-
-  const { data: leaderboards = [], isLoading: isLeaderboardsLoading } =
-    useQuery({
-      queryKey: ["simLeaderboards"],
-      queryFn: async () => {
-        const { data, error } = await simAppApi.leaderboards.getLeaderboards();
-        if (error) {
-          console.error("Error fetching sim leaderboards:", error);
-          return [];
-        }
-        return data?.slice(0, 3) || [];
-      },
-    });
+  const isLeaguesLoading = false;
+  const isEventsLoading = false;
+  const isProductsLoading = false;
+  const isGaragesLoading = false;
+  const isLeaderboardsLoading = false;
 
   // For the first leaderboard entries
-  const {
-    data: leaderboardEntries = [],
-    isLoading: isLeaderboardEntriesLoading,
-  } = useQuery({
-    queryKey: ["simLeaderboardEntries", leaderboards[0]?.id],
-    queryFn: async () => {
-      if (!leaderboards[0]?.id) return [];
-
-      const { data, error } =
-        await simAppApi.leaderboards.getLeaderboardEntries(
-          leaderboards[0].id,
-          5
-        );
-      if (error) {
-        console.error("Error fetching leaderboard entries:", error);
-        return [];
-      }
-      return data || [];
-    },
-    enabled: !!leaderboards[0]?.id,
-  });
+  const isLeaderboardEntriesLoading = false;
 
   return (
     <Layout>
@@ -457,55 +403,41 @@ const SimRacing = () => {
               ) : leaderboards.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {leaderboards.map((leaderboard, index) => {
-                    const LeaderboardContent = () => {
-                      const { data: entries = [], isLoading } = useQuery({
-                        queryKey: ["simLeaderboardEntries", leaderboard.id],
-                        queryFn: async () => {
-                          const { data, error } =
-                            await simAppApi.leaderboards.getLeaderboardEntries(
-                              leaderboard.id,
-                              10
-                            );
-                          if (error) {
-                            console.error(
-                              `Error fetching entries for ${leaderboard.id}:`,
-                              error
-                            );
-                            return [];
-                          }
-                          return data || [];
-                        },
-                      });
+                    const entriesForBoard =
+                      index === 0 ? leaderboardEntries : [];
 
-                      if (isLoading) {
-                        return <Skeleton className="h-80 w-full rounded-lg" />;
-                      }
-
-                      return (
-                        <LeaderboardCard
-                          title={leaderboard.title}
-                          entries={entries.map((entry: any) => ({
-                            ...entry,
-                            user: entry.user && typeof entry.user === 'object' && 'id' in entry.user && 'username' in entry.user
+                    return (
+                      <LeaderboardCard
+                        key={leaderboard.id}
+                        title={leaderboard.title}
+                        entries={entriesForBoard.map((entry: any) => ({
+                          ...entry,
+                          user:
+                            entry.user &&
+                            typeof entry.user === "object" &&
+                            "id" in entry.user &&
+                            "username" in entry.user
                               ? {
                                   id: entry.user.id,
-                                  username: entry.user.username || '',
-                                  avatar_url: entry.user.avatar_url || undefined,
+                                  username: entry.user.username || "",
+                                  avatar_url:
+                                    entry.user.avatar_url || undefined,
                                 }
                               : null,
-                            team: entry.team && typeof entry.team === 'object' && 'id' in entry.team && 'name' in entry.team
+                          team:
+                            entry.team &&
+                            typeof entry.team === "object" &&
+                            "id" in entry.team &&
+                            "name" in entry.team
                               ? {
                                   id: entry.team.id,
-                                  name: entry.team.name || '',
+                                  name: entry.team.name || "",
                                   logo: entry.team.logo || undefined,
                                 }
                               : null,
-                          }))}
-                        />
-                      );
-                    };
-
-                    return <LeaderboardContent key={leaderboard.id} />;
+                        }))}
+                      />
+                    );
                   })}
                 </div>
               ) : (

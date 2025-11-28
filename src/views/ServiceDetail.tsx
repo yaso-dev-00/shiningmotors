@@ -443,7 +443,7 @@ console.log(category)
                             </Button>
                           </PopoverTrigger>
                           <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
+                          <Calendar
                               mode="single"
                               selected={selectedDate}
                               onSelect={setSelectedDate}
@@ -540,23 +540,27 @@ console.log(category)
 export default ServiceDetail;
 
 
+// Time slots used for booking, should match the admin AvailabilitySelector options
 const availableTimes = [
-  "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
-  "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"
+  "9:00 AM",
+  "10:00 AM",
+  "11:00 AM",
+  "12:00 PM",
+  "1:00 PM",
+  "2:00 PM",
+  "3:00 PM",
+  "4:00 PM",
+  "5:00 PM",
+  "6:00 PM",
+  "7:00 PM",
+  "8:00 PM",
+  "9:00 PM",
 ];
 
-const availability = {
-  Mon: { start: "9:00 AM", end: "11:00 AM" },
-  Wed: { start: "12:00 PM", end: "2:00 PM" }
-  
-};
-
-// const availableTimes = [
-//   "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", 
-//   "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"
-// ];
-
-function filterAvailableTimes(availability: Record<string, { start?: string; end?: string }> | null | undefined, selectedDate: Date | null | undefined): string[] {
+function filterAvailableTimes(
+  availability: Record<string, { start?: string; end?: string }> | null | undefined,
+  selectedDate: Date | null | undefined
+): string[] {
   if (!selectedDate) return [];
 
   const date = new Date(selectedDate);

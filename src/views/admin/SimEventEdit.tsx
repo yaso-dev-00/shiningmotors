@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -85,10 +85,14 @@ const SimEventEdit = () => {
   const stringId = Array.isArray(id) ? id[0] : id;
   const router = useRouter();
   const isEditing = !!id;
+  const isVendorContext =
+    typeof window !== "undefined" &&
+    window.location.pathname.includes("/vendor/");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [leaguesId,setleaguesId]=useState<SimLeague[]>([])
   const [startDate,setStartdate]=useState("")
   const {user}=useAuth()
+  const isInitializingRef = useRef(false);
   // Fetch leagues for dropdown
   const { data: leagues = [] } = useQuery({
     queryKey: ["simLeagues"],
@@ -140,14 +144,20 @@ const SimEventEdit = () => {
        const filteredId=leagues.filter((item: SimLeague)=>{
             return !leagueIds.includes(item.id) && item.platform==form.getValues('platform')
         }) 
-        console.log(filteredId)
          if(!filteredId.length)
          {
           toast({
            title: "Event Limit Reached",
 description: "You’ve already added events for all available leagues."
           });
+          if(isVendorContext)
+          {
+            router.push("/vendor/simevent-management" as any);
+          }
+          else
+          {
           router.push("/admin/sim-events" as any);
+          }
          }
  
         setleaguesId(filteredId)
@@ -155,7 +165,7 @@ description: "You’ve already added events for all available leagues."
     }
   
 },[allEvents,leagues])
-console.log(leaguesId,leagues)
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as any,
     defaultValues: {
@@ -198,6 +208,14 @@ console.log(leaguesId,leagues)
   // Update form values when event data is loaded
   useEffect(() => {
     if (event) {
+      isInitializingRef.current = true;
+      const leagueId = event.league_id || "";
+      
+      const registrationType = (event.registration_type && 
+        ["solo", "team", "invitation_only", "open"].includes(event.registration_type))
+        ? event.registration_type 
+        : "open";
+      
       form.reset({
         title: event.title || "",
         description: event.description || "",
@@ -209,11 +227,30 @@ console.log(leaguesId,leagues)
         car_setup: event.car_setup || "",
         start_date: event.start_date ? new Date(event.start_date).toISOString().split('T')[0] : "",
         end_date: event.end_date ? new Date(event.end_date).toISOString().split('T')[0] : "",
-        registration_type: event.registration_type || "open",
+        registration_type: registrationType as "solo" | "team" | "invitation_only" | "open",
         max_participants: event.max_participants != null ? String(event.max_participants) : "",
-        league_id: event.league_id || "",
+        league_id: leagueId,
         replay_url: event.replay_url || "",
       } as FormValues);
+      
+      // Explicitly set league_id to ensure Select component receives it
+      if (leagueId) {
+        form.setValue("league_id", leagueId, {
+          shouldValidate: false,
+          shouldDirty: false,
+        });
+      }
+      
+      // Explicitly set registration_type to ensure Select component receives it
+      form.setValue("registration_type", registrationType as "solo" | "team" | "invitation_only" | "open", {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+      
+      // Reset the flag after a short delay to allow form to settle
+      setTimeout(() => {
+        isInitializingRef.current = false;
+      }, 100);
     }
   }, [event, form]);
 
@@ -238,23 +275,63 @@ console.log(leaguesId,leagues)
           title: "Event Updated",
           description: "The event has been successfully updated.",
         });
+
+        // Trigger revalidation for sim-racing SSG/ISR
+        try {
+          await fetch("/api/sim-racing/revalidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: stringId,
+              entityType: "event",
+              action: "update",
+            }),
+          });
+        } catch (revalidateError) {
+          console.error(
+            "Error triggering sim-racing revalidation (event update):",
+            revalidateError
+          );
+        }
       } else {
         // Explicitly set required fields for creation
-        await simRacingApi.events.create({
+        const { error } = await simRacingApi.events.create({
           title: values.title,
           event_type: values.event_type,
           registration_type: values.registration_type,
           platform: values.platform,
           ...eventData,
-          created_by:user?.id || ""
-        });
+          created_by: user?.id || "",
+        } as any);
+        if (error) throw error;
+
         toast({
           title: "Event Created",
           description: "The new event has been successfully created.",
         });
+
+        // Trigger revalidation for sim-racing SSG/ISR
+        try {
+          await fetch("/api/sim-racing/revalidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              // No specific detail page yet; revalidate listing and /sim-racing
+              entityType: "event",
+              action: "create",
+            }),
+          });
+        } catch (revalidateError) {
+          console.error(
+            "Error triggering sim-racing revalidation (event create):",
+            revalidateError
+          );
+        }
       }
 
-      router.push("/admin/sim-events" as any);
+      router.push(
+        (isVendorContext ? "/vendor/simevent-management" : "/admin/sim-events") as any
+      );
     } catch (error) {
       console.error("Error saving event:", error);
       toast({
@@ -276,12 +353,13 @@ console.log(leaguesId,leagues)
       </AdminLayout>
     );
   }
-  console.log(form.formState.errors,form.getValues())
 
   return (
     <AdminLayout 
       title={isEditing ? "Edit Sim Racing Event" : "Create Sim Racing Event"}
-      backLink="/admin/sim-events"
+      backLink={
+        isVendorContext ? "/vendor/simevent-management" : "/admin/sim-events"
+      }
     >
       <Card>
         <CardContent className="pt-6">
@@ -415,29 +493,38 @@ console.log(leaguesId,leagues)
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>League</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        value={field.value || ""}
-                        disabled={isEditing}
-                      >
-                        <FormControl>
+                      <FormControl>
+                        <Select
+                          onValueChange={(value) => {
+                            // Prevent onChange from firing during form initialization
+                            if (isInitializingRef.current) {
+                              return;
+                            }
+                            // Only update if value is not empty
+                            if (value && value !== "no leagues") {
+                              field.onChange(value);
+                              field.onBlur();
+                            }
+                          }}
+                          value={field.value || ""}
+                          disabled={isEditing}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select league" />
                           </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {(isEditing?leagues:leaguesId).length > 0 ? (
-                            (isEditing?leagues:leaguesId).map(league => (
-                              <SelectItem key={league.id} value={league.id} >
-                                {league.name}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="no leagues" disabled>No leagues available</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
+                          <SelectContent>
+                            {(isEditing?leagues:leaguesId).length > 0 ? (
+                              (isEditing?leagues:leaguesId).map(league => (
+                                <SelectItem key={league.id} value={league.id} >
+                                  {league.name}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="no leagues" disabled>No leagues available</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -481,24 +568,33 @@ console.log(leaguesId,leagues)
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Registration Type*</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        value={field.value}
-                      >
-                        <FormControl>
+                      <FormControl>
+                        <Select
+                          onValueChange={(value) => {
+                            // Prevent onChange from firing during form initialization
+                            if (isInitializingRef.current) {
+                              return;
+                            }
+                            // Only update if value is not empty and is a valid option
+                            if (value && ["solo", "team", "invitation_only", "open"].includes(value)) {
+                              field.onChange(value);
+                              field.onBlur();
+                            }
+                          }}
+                          value={field.value || "open"}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select registration type" />
                           </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {registrationTypeOptions.map(option => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                          <SelectContent>
+                            {registrationTypeOptions.map(option => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

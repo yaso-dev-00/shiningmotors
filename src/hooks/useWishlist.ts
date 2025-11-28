@@ -156,28 +156,25 @@ export const useWishlist = () => {
 
   useEffect(() => {
     if (user) {
-      // Only auto-fetch wishlist on the dedicated wishlist page
-      const isWishlistPage = pathname?.startsWith("/wishlist");
-
-      if (!isWishlistPage) {
-        // On other pages, just serve any existing cache and avoid API calls
-        if (cacheForUserId === user.id && wishlistCache.length > 0) {
-          setWishlistItems(wishlistCache);
-        }
-        return;
-      }
-
-      // On /wishlist, ensure data is loaded
-      if (cacheForUserId === user.id && wishlistCache.length > 0) {
+      // If we have cached data for this user, use it immediately
+      if (cacheForUserId === user.id) {
         setWishlistItems(wishlistCache);
-        return;
+        // If cache is empty and we haven't fetched yet, fetch it
+        if (wishlistCache.length === 0 && !isFetchingWishlist) {
+          fetchWishlist();
+        }
+      } else {
+        // No cache for this user, fetch it
+        fetchWishlist();
       }
-
-      fetchWishlist();
     } else {
       setWishlistItems([]);
+      // Clear cache when user logs out
+      wishlistCache = [];
+      cacheForUserId = null;
     }
-  }, [user, pathname]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   return {
     wishlistItems,

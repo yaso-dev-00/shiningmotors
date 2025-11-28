@@ -440,13 +440,10 @@ const CreatePost = ({
             formData.append("cropWidth", videoCropParams[idx].cropWidth);
             formData.append("cropHeight", videoCropParams[idx].cropHeight);
             formData.append("userId", user.id);
-            const response = await fetch(
-              "https://shining-motors-backend-production.up.railway.app/api/crop",
-              {
-                method: "POST",
-                body: formData,
-              }
-            );
+            const response = await fetch("/api/crop", {
+              method: "POST",
+              body: formData,
+            });
             if (!response.ok)
               throw new Error(
                 "Failed to crop video ,Post a video that has less than 2MB"

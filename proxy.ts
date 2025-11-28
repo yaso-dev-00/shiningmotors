@@ -19,6 +19,7 @@ export function proxy(req: NextRequest) {
     /^\/myServiceBookings$/,
     /^\/profile(\/.*)?$/,
     /^\/settings$/,
+    /^\/social(\/.*)?$/,
   ];
 
   const requiresAuth = protectedPaths.some((re) => re.test(pathname));
@@ -42,6 +43,7 @@ export const config = {
     '/myServiceBookings',
     '/profile/:path*',
     '/settings',
+    '/social/:path*',
   ],
 };
 
