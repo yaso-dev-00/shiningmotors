@@ -1,69 +1,206 @@
 
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { DayPicker } from "react-day-picker";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
-export type CalendarProps = React.ComponentProps<typeof DayPicker>;
+// Simple, self-contained calendar props (no react-day-picker)
+export interface CalendarProps {
+  className?: string;
+  /** Selected date for single-date selection */
+  selected?: Date;
+  /** Called when user selects a date */
+  onSelect?: (date: Date | undefined) => void;
+  /** Disable specific dates */
+  disabled?: (date: Date) => boolean;
+  /** Compatibility props used in existing code (kept optional) */
+  mode?: "single";
+  initialFocus?: boolean;
+  /** Optional DayPicker-style modifier support for custom styling */
+  modifiersClassNames?: Record<string, string>;
+  modifiers?: Record<string, (date: Date) => boolean>;
+  modifiersStyles?: Record<string, React.CSSProperties>;
+  /** Legacy prop from previous calendar usage (ignored) */
+  required?: boolean;
+}
+
+const WEEK_DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+function isSameDay(a?: Date, b?: Date) {
+  if (!a || !b) return false;
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function getCalendarDays(currentMonth: Date): Date[] {
+  const days: Date[] = [];
+  const firstOfMonth = startOfMonth(currentMonth);
+  const firstWeekday = firstOfMonth.getDay(); // 0 (Sun) - 6 (Sat)
+
+  // Start from the Sunday of the first week in the grid
+  const gridStart = new Date(
+    firstOfMonth.getFullYear(),
+    firstOfMonth.getMonth(),
+    firstOfMonth.getDate() - firstWeekday
+  );
+
+  // 6 weeks * 7 days = 42 cells
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    days.push(d);
+  }
+
+  return days;
+}
 
 function Calendar({
   className,
-  classNames,
-  showOutsideDays = true,
-  ...props
+  selected,
+  onSelect,
+  disabled,
+  modifiers,
+  modifiersClassNames,
+  modifiersStyles,
 }: CalendarProps) {
+  const [month, setMonth] = React.useState<Date>(
+    selected ? new Date(selected) : new Date()
+  );
+
+  const today = React.useMemo(() => new Date(), []);
+  const days = React.useMemo(() => getCalendarDays(month), [month]);
+
+  const handlePrevMonth = () => {
+    setMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
   return (
-    <DayPicker
-      showOutsideDays={showOutsideDays}
-      className={cn("p-3 pointer-events-auto", className)}
-      classNames={{
-        months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-        month: "space-y-4",
-        caption: "flex justify-center pt-1 relative items-center",
-        caption_label: "text-sm font-medium",
-        nav: "space-x-1 flex items-center",
-        nav_button: cn(
-          buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
-        ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
-        table: "w-full border-collapse space-y-1",
-        head_row: "flex",
-        head_cell:
-          "text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]",
-        row: "flex w-full mt-2",
-        cell: "h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
-        day: cn(
-          buttonVariants({ variant: "ghost" }),
-          "h-9 w-9 p-0 font-normal aria-selected:opacity-100"
-        ),
-        day_range_end: "day-range-end",
-        day_selected:
-          "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        day_today: "bg-accent text-accent-foreground",
-        day_outside:
-          "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30",
-        day_disabled: "text-muted-foreground opacity-50",
-        day_range_middle:
-          "aria-selected:bg-accent aria-selected:text-accent-foreground",
-        day_hidden: "invisible",
-        ...classNames,
-      }}
-      components={{
-        Chevron: ({ orientation, ...props }: { orientation?: "left" | "right" | "up" | "down"; className?: string; size?: number; disabled?: boolean }) =>
-          orientation === "left" ? (
-            <ChevronLeft className="h-4 w-4" {...props} />
-          ) : (
-            <ChevronRight className="h-4 w-4" {...props} />
-          ),
-      }}
-      {...props}
-    />
+    <div className={cn("p-3 pointer-events-auto", className)}>
+      {/* Header with month / year and navigation */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          onClick={handlePrevMonth}
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "h-7 w-7 bg-transparent p-0 opacity-70 hover:opacity-100"
+          )}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <div className="text-sm font-medium">
+          {month.toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={handleNextMonth}
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "h-7 w-7 bg-transparent p-0 opacity-70 hover:opacity-100"
+          )}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 text-center text-xs text-muted-foreground mb-1 gap-1">
+        {WEEK_DAYS.map((d) => (
+          <div key={d} className="h-8 flex items-center justify-center">
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((day) => {
+          const isCurrentMonth = day.getMonth() === month.getMonth();
+          const isSelected = isSameDay(day, selected);
+          const isToday = isSameDay(day, today);
+          const isDisabled = disabled ? disabled(day) : false;
+
+          let dayClasses =
+            "h-9 w-9 flex items-center justify-center rounded-md text-sm transition-colors";
+          let dayStyle: React.CSSProperties | undefined;
+
+          if (!isCurrentMonth) {
+            dayClasses += " text-muted-foreground opacity-40";
+          } else {
+            dayClasses += " text-foreground";
+          }
+
+          if (isToday && !isSelected) {
+            dayClasses += " border border-accent";
+          }
+
+          if (isSelected) {
+            dayClasses += " bg-primary text-primary-foreground";
+          }
+          // Allow overriding selected style through modifiersClassNames.selected
+          if (isSelected && modifiersClassNames?.selected) {
+            dayClasses += " " + modifiersClassNames.selected;
+          }
+
+          if (isDisabled) {
+            dayClasses += " opacity-40 cursor-not-allowed";
+          } else {
+            dayClasses += " hover:bg-accent hover:text-accent-foreground cursor-pointer";
+          }
+
+          // Apply DayPicker-style modifiers (pending/confirmed/etc)
+          if (modifiers) {
+            for (const [name, predicate] of Object.entries(modifiers)) {
+              try {
+                if (predicate(day)) {
+                  const extraClass = modifiersClassNames?.[name];
+                  if (extraClass) dayClasses += " " + extraClass;
+                  const extraStyle = modifiersStyles?.[name];
+                  if (extraStyle) {
+                    dayStyle = { ...(dayStyle || {}), ...extraStyle };
+                  }
+                }
+              } catch {
+                // ignore modifier errors to avoid breaking calendar
+              }
+            }
+          }
+
+          return (
+            <button
+              key={day.toISOString()}
+              type="button"
+              className={dayClasses}
+              style={dayStyle}
+              onClick={() => {
+                if (isDisabled) return;
+                onSelect?.(day);
+              }}
+            >
+              {day.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
+
 Calendar.displayName = "Calendar";
 
 export { Calendar };

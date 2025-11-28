@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter, usePathname, useSearchParams as useNextSearchParams } from "next/navigation";
 import { vehiclesApi, type Vehicle, type ExtendedVehicle } from "@/integrations/supabase/modules/vehicles";
 import Header from "@/components/Header";
@@ -71,29 +71,32 @@ const VehicleCategory = () => {
   
   const { toast } = useToast();
   const itemsPerPage = 15;
-    useEffect(()=>{
-       window.scrollTo(0,0)
-    },[])
-  const [isInitial,setIsInitial]=useState(true)
- useEffect(()=>{
-     if(!isInitial)
-     {
-
-     
-     setTimeout(() => {
-       const element = document.getElementById('vehicle');
-       if (element) {
-         element.scrollIntoView({ behavior: 'smooth' });
-        
-       }
-     
-     }, 100);
-   }
-   
-   setIsInitial(false)
- },[currentPage])
-  // Initialize state from URL params
+  const isSyncingFromUrlRef = useRef(false);
+  const hasInitializedRef = useRef(false);
+  const lastUrlRef = useRef<string>("");
+  const fetchingRef = useRef(false);
+  
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+  
+  const [isInitial, setIsInitial] = useState(true);
+  useEffect(() => {
+    if (!isInitial) {
+      setTimeout(() => {
+        const element = document.getElementById('vehicle');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+    }
+    setIsInitial(false);
+  }, [currentPage]);
+  
+  // Initialize state from URL params (only on mount or when URL actually changes externally)
+  useEffect(() => {
+    if (!searchParams || isSyncingFromUrlRef.current) return;
+    
     const page = parseInt(searchParams?.get("page") || "1");
     const search = searchParams?.get("search") || "";
     const make = searchParams?.get("make") || "";
@@ -103,20 +106,45 @@ const VehicleCategory = () => {
     const maxYear = searchParams?.get("maxYear") || "";
     const status = searchParams?.get("status") || "";
     
-    setCurrentPage(page);
-    setSearchTerm(search);
-    setFilters({
+    const newFilters = {
       make,
       minPrice,
       maxPrice,
       minYear,
       maxYear,
       status
-    });
+    };
+    
+    // Only update if values actually changed to prevent loops
+    const filtersChanged = 
+      filters.make !== make ||
+      filters.minPrice !== minPrice ||
+      filters.maxPrice !== maxPrice ||
+      filters.minYear !== minYear ||
+      filters.maxYear !== maxYear ||
+      filters.status !== status;
+    
+    const pageChanged = currentPage !== page;
+    const searchChanged = searchTerm !== search;
+    
+    if (filtersChanged || pageChanged || searchChanged || !hasInitializedRef.current) {
+      isSyncingFromUrlRef.current = true;
+      setCurrentPage(page);
+      setSearchTerm(search);
+      setFilters(newFilters);
+      hasInitializedRef.current = true;
+      
+      // Reset flag after state updates
+      setTimeout(() => {
+        isSyncingFromUrlRef.current = false;
+      }, 0);
+    }
   }, [searchParams]);
   
-  // Update URL when params change
+  // Update URL when params change (only if not syncing from URL)
   useEffect(() => {
+    if (isSyncingFromUrlRef.current || !hasInitializedRef.current) return;
+    
     const params = new URLSearchParams();
     
     if (currentPage > 1) params.set("page", currentPage.toString());
@@ -128,18 +156,20 @@ const VehicleCategory = () => {
     if (filters.maxYear) params.set("maxYear", filters.maxYear);
     if (filters.status) params.set("status", filters.status);
     
-    setSearchParams(params);
-  }, [currentPage, debouncedSearchTerm, filters, router]);
-  
-  // Fetch vehicles when params change
-  useEffect(() => {
-    if (category) {
-      fetchVehicles();
+    const queryString = params.toString();
+    const newUrl = queryString ? `${pathname}?${queryString}` : pathname || "";
+    
+    // Only update URL if it actually changed from the last one
+    if (newUrl !== lastUrlRef.current) {
+      lastUrlRef.current = newUrl;
+      router.replace(newUrl as any, { scroll: false });
     }
-  }, [category, currentPage, debouncedSearchTerm, filters]);
+  }, [currentPage, debouncedSearchTerm, filters, router, pathname]);
   
   const fetchVehicles = async () => {
     if (!category) return;
+    if (fetchingRef.current) return; // Prevent concurrent calls
+    fetchingRef.current = true;
     
     setLoading(true);
     try {
@@ -202,8 +232,17 @@ const VehicleCategory = () => {
       });
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
   };
+  
+  // Fetch vehicles when params change
+  useEffect(() => {
+    if (category) {
+      fetchVehicles();
+    }
+    // eslint-disable-next-line
+  }, [category, currentPage, debouncedSearchTerm, filters]);
   
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -337,7 +376,7 @@ const VehicleCategory = () => {
                       )}
                       {filters.minPrice && (
                         <Badge variant="outline" className="flex items-center gap-1">
-                          Min Price: ${filters.minPrice}
+                          Min Price: ₹{new Intl.NumberFormat("en-IN").format(parseInt(filters.minPrice))}
                           <X 
                             size={14} 
                             className="ml-1 cursor-pointer" 
@@ -347,7 +386,7 @@ const VehicleCategory = () => {
                       )}
                       {filters.maxPrice && (
                         <Badge variant="outline" className="flex items-center gap-1">
-                          Max Price: ${filters.maxPrice}
+                          Max Price: ₹{new Intl.NumberFormat("en-IN").format(parseInt(filters.maxPrice))}
                           <X 
                             size={14} 
                             className="ml-1 cursor-pointer" 
@@ -414,10 +453,11 @@ const VehicleCategory = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">Any Price</SelectItem>
-                          <SelectItem value="50000">Under $50,000</SelectItem>
-                          <SelectItem value="100000">Under $100,000</SelectItem>
-                          <SelectItem value="200000">Under $200,000</SelectItem>
-                          <SelectItem value="500000">Under $500,000</SelectItem>
+                          <SelectItem value="2500000">Under ₹25 Lakh</SelectItem>
+                          <SelectItem value="5000000">Under ₹50 Lakh</SelectItem>
+                          <SelectItem value="10000000">Under ₹1 Crore</SelectItem>
+                          <SelectItem value="20000000">Under ₹2 Crore</SelectItem>
+                          <SelectItem value="50000000">Under ₹5 Crore</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

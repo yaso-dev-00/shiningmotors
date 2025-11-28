@@ -210,6 +210,20 @@ const VehicleEdit = () => {
         
         if (error) throw error;
         
+        // Trigger revalidation for vehicles SSG/ISR
+        try {
+          await fetch("/api/vehicles/revalidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: id,
+              action: "update",
+            }),
+          });
+        } catch (revalidateError) {
+          console.error("Error triggering vehicles revalidation:", revalidateError);
+        }
+        
         toast({
           title: "Vehicle updated",
           description: "The vehicle has been updated successfully",
@@ -223,11 +237,27 @@ const VehicleEdit = () => {
           seller_id: sellerId,
           seats: vehicleData.seats,
         };
-        const { error } = await supabase
+        const { data: newVehicle, error } = await supabase
           .from('vehicles')
-          .insert([insertData]);
+          .insert([insertData])
+          .select()
+          .single();
         
         if (error) throw error;
+        
+        // Trigger revalidation for vehicles SSG/ISR
+        try {
+          await fetch("/api/vehicles/revalidate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: newVehicle?.id,
+              action: "create",
+            }),
+          });
+        } catch (revalidateError) {
+          console.error("Error triggering vehicles revalidation:", revalidateError);
+        }
         
         toast({
           title: "Vehicle created",

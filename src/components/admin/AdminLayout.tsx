@@ -35,6 +35,8 @@ const AdminLayout = ({ children, title, backLink }: AdminLayoutProps) => {
       router.push("/admin");
     } else if (backLink == "/admin/vendor-activities") {
       router.push("/admin/vendor-activities");
+    } else if(backLink && backLink.includes("/vendor/")) {
+      router.push(backLink as any);
     } else {
       router.back();
     }

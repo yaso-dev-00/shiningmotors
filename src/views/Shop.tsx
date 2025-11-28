@@ -1,3 +1,4 @@
+"use client";
 import { useState, useEffect } from "react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -51,17 +52,22 @@ const productCategories = [
   { value: "offroad-adventure", label: "Off-Roading & Adventure Gear" },
 ]
 
-const Shop = () => {
+interface ShopProps {
+  initialProducts?: Product[];
+  initialTotalCount?: number;
+}
+
+const Shop = ({ initialProducts = [], initialTotalCount = 0 }: ShopProps) => {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('newest');
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalCount, setTotalCount] = useState<number>(0);
+  const [totalCount, setTotalCount] = useState<number>(initialTotalCount);
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
   const router = useRouter();
@@ -88,10 +94,12 @@ const Shop = () => {
     setIsInitial(false)
   },[currentPage])
   useEffect(() => {
-    fetchProducts();
-     
+    // Only fetch if filters are applied (not using initial data)
+    if (selectedCategory || selectedStatus !== 'all' || minPrice || maxPrice || debouncedSearchTerm || currentPage > 1) {
+      fetchProducts();
+    }
     // eslint-disable-next-line
-  }, [selectedCategory, selectedStatus, sortBy, minPrice, maxPrice, currentPage,debouncedSearchTerm]);
+  }, [selectedCategory, selectedStatus, sortBy, minPrice, maxPrice, currentPage, debouncedSearchTerm]);
 
   const fetchProducts = async () => {
     try {

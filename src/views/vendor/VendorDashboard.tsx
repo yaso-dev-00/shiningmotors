@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle, XCircle, Clock, Plus, Building, FileText, User, Eye, Edit, Settings, BarChart3} from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Plus, Building, FileText, User, Eye, Edit, Settings, BarChart3, ArrowRight} from 'lucide-react';
 import VendorRegistrationForm from '@/components/vendor/VendorRegistrationForm';
 import VendorUpdateRequestForm from '@/components/vendor/VendorUpdateRequestForm';
 import VendorBasicDetailsEdit from '@/components/vendor/VendorBasicDetailsEdit';
@@ -85,16 +85,40 @@ const VendorDashboard = () => {
 
   if (!vendorRegistration) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold">Vendor Registration</h1>
-            <p className="text-gray-600 mt-2">Register as a vendor to start selling on our platform</p>
+      <Layout>
+        <div className="container mx-auto px-4 py-16">
+          <div className="max-w-2xl mx-auto">
+            <Card className="border-2 border-gray-200">
+              <CardContent className="p-8 md:p-12 text-center">
+                <div className="mb-6 flex justify-center">
+                  <div className="bg-gray-100 p-4 rounded-full">
+                    <Building className="w-12 h-12 text-gray-400" />
+                  </div>
+                </div>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
+                  Vendor Registration Required
+                </h2>
+                <p className="text-gray-600 mb-2 text-lg">
+                  To access the vendor dashboard, you'll need to complete your vendor registration first.
+                </p>
+                <p className="text-gray-500 mb-8">
+                  You can start your vendor registration process in your account settings.
+                </p>
+                <NextLink href="/settings">
+                  <Button 
+                    size="lg" 
+                    className="bg-sm-red hover:bg-sm-red-light text-white"
+                  >
+                    <Settings className="w-5 h-5 mr-2" />
+                    Go to Settings
+                    <ArrowRight className="w-5 h-5 ml-2" />
+                  </Button>
+                </NextLink>
+              </CardContent>
+            </Card>
           </div>
-          
-          <VendorRegistrationForm onSuccess={fetchVendorData} />
         </div>
-      </div>
+      </Layout>
     );
   }
 

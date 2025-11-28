@@ -971,8 +971,8 @@ const PostCardForHomePage = ({
                           }}
                           className="w-full h-full object-contain"
                         />
-                        {/* Desktop mute/unmute button */}
-                        {!isMobile && (
+                        {/* Desktop mute/unmute button - Hidden */}
+                        {false && !isMobile && (
                           <button
                             className="absolute top-2 right-2 bg-black bg-opacity-60 rounded-full p-1 text-white z-10 mute-unmute-btn"
                             aria-label={
@@ -1006,8 +1006,8 @@ const PostCardForHomePage = ({
                             )}
                           </button>
                         )}
-                        {/* Mobile mute/unmute button (existing logic) */}
-                        {isMobile && (
+                        {/* Mobile mute/unmute button - Hidden */}
+                        {false && isMobile && (
                           <button
                             className="block absolute top-2 right-2 bg-black bg-opacity-60 rounded-full p-1 text-white z-10 mute-unmute-btn"
                             aria-label={muted ? "unmute" : "mute"}
@@ -1121,8 +1121,8 @@ const PostCardForHomePage = ({
                     });
                   }}
                 />
-                {/* Desktop mute/unmute button */}
-                {!isMobile && (
+                {/* Desktop mute/unmute button - Hidden */}
+                {false && !isMobile && (
                   <button
                     className="absolute top-2 right-2 bg-black bg-opacity-60 rounded-full p-1 text-white z-10 mute-unmute-btn"
                     aria-label={
@@ -1156,8 +1156,8 @@ const PostCardForHomePage = ({
                     )}
                   </button>
                 )}
-                {/* Mobile mute/unmute button (existing logic) */}
-                {isMobile && (
+                {/* Mobile mute/unmute button - Hidden */}
+                {false && isMobile && (
                   <button
                     className="block absolute top-2 right-2 bg-black bg-opacity-60 rounded-full p-1 text-white z-10 mute-unmute-btn"
                     aria-label={muted ? "unmute" : "mute"}

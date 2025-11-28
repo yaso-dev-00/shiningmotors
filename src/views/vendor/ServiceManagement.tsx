@@ -532,18 +532,17 @@ const ServiceManagement = () => {
                       selected={selectedDate}
                       onSelect={(date) => date && setSelectedDate(date)}
                       className="rounded-md border"
-                      required={false}
                       modifiersClassNames={{
                         selected: "bg-primary text-primary-foreground",
                       }}
                       modifiers={{
-                        pending: (date) =>
+                        pending: (date: Date) =>
                           getDateBookingStatus(date) === "pending",
-                        confirmed: (date) =>
+                        confirmed: (date: Date) =>
                           getDateBookingStatus(date) === "confirmed",
-                        completed: (date) =>
+                        completed: (date: Date) =>
                           getDateBookingStatus(date) === "completed",
-                        cancelled: (date) =>
+                        cancelled: (date: Date) =>
                           getDateBookingStatus(date) === "cancelled",
                       }}
                       modifiersStyles={{

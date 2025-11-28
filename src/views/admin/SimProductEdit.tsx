@@ -67,6 +67,11 @@ const SimProductEdit = () => {
   const [existingImageUrl, setExistingImageUrl] = useState<string[]>([]);
   const isEditMode = !!id;
 
+  // Detect if we're in vendor context
+  const isVendorContext =
+    typeof window !== "undefined" &&
+    window.location.pathname.includes("/vendor/");
+
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues: {
@@ -175,7 +180,26 @@ const SimProductEdit = () => {
         });
       }
 
-      router.push("/admin/sim-products" as any);
+      // Trigger revalidation for sim-racing SSG/ISR
+      try {
+        await fetch("/api/sim-racing/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: id || undefined,
+            entityType: "product",
+            action: isEditMode ? "update" : "create",
+          }),
+        });
+      } catch (revalidateError) {
+        console.error("Error triggering sim-racing revalidation (product):", revalidateError);
+      }
+
+      router.push(
+        (isVendorContext
+          ? "/vendor/simracing-management"
+          : "/admin/sim-products") as any
+      );
     } catch (error: unknown) {
       console.error("Error saving product:", error);
       toast({
@@ -197,7 +221,9 @@ const SimProductEdit = () => {
   return (
     <AdminLayout 
       title={isEditMode ? "Edit Sim Racing Product" : "Create Sim Racing Product"} 
-      backLink="/admin/sim-products"
+      backLink={
+        isVendorContext ? "/vendor/simracing-management" : "/admin/sim-products"
+      }
     >
       <Card>
         <CardHeader>
@@ -273,12 +299,10 @@ const SimProductEdit = () => {
                       <FormControl>
                         <Input 
                           type="number" 
-                          placeholder="0.00" 
-                          min="0" 
-                          step="0.01"
+                          // placeholder="0.00"                         
                           onChange={(e) => {
                             const value = parseFloat(e.target.value);
-                            field.onChange(isNaN(value) ? 0 : value);
+                            field.onChange(isNaN(value) ? 0.00 : value);
                           }}
                           value={field.value}
                         />
@@ -298,8 +322,8 @@ const SimProductEdit = () => {
                         <Input 
                           type="number" 
                           placeholder="0" 
-                          min="0" 
-                          step="1"
+                          // min="0" 
+                          // step="1"
                           onChange={(e) => {
                             const value = parseInt(e.target.value, 10);
                             field.onChange(isNaN(value) ? 0 : value);

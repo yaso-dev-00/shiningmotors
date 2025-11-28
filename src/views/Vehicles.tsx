@@ -1,3 +1,4 @@
+"use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
@@ -20,7 +21,6 @@ import { PaginationBar } from "@/components/ui/PaginationBar";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { useDebounce } from "@/hooks/useDebounce";
 import HorizontalScrollForVehicles from "@/components/homepage/HorizontalScroll";
 import { motion } from "framer-motion";
 import HorizontalScrollCategories from "@/components/shop/HorizontalScroll";
@@ -58,29 +58,37 @@ const categories = [
   { value: "campervans-rvs", label: "Campervans & RVs" },
 ];
 
-const Vehicles = () => {
+interface VehiclesProps {
+  initialVehicles?: ExtendedVehicle[];
+}
+
+const Vehicles = ({ initialVehicles = [] }: VehiclesProps) => {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [vehicles, setVehicles] = useState<ExtendedVehicle[]>([]);
+  const [vehicles, setVehicles] = useState<ExtendedVehicle[]>(initialVehicles);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeSearchTerm, setActiveSearchTerm] = useState(""); // Search term that triggers API call
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<VehicleFilters>({});
   const [sortOption, setSortOption] = useState("newest");
-  const debouncedSearchTerm = useDebounce(searchTerm, 500);
   
   const { toast } = useToast();
   const itemsPerPage = 15;
   const positionRef = useRef<HTMLElement>();
   const [isInitial, setIsInitial] = useState(true);
+  const isSyncingFromUrlRef = useRef(false);
+  const hasInitializedRef = useRef(false);
+  
   useEffect(() => {
     setTimeout(() => {
       window.scrollTo(0, 0);
     }, 100);
   }, []);
+  
   useEffect(() => {
     if (!isInitial) {
       setTimeout(() => {
@@ -93,9 +101,11 @@ const Vehicles = () => {
     setIsInitial(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
-  // Initialize filters from URL params
+  
+  // Initialize filters from URL params (only on mount or when URL actually changes externally)
   useEffect(() => {
-    if (!searchParams) return;
+    if (!searchParams || isSyncingFromUrlRef.current) return;
+    
     const category = searchParams.get("category") || undefined;
     const make = searchParams.get("make") || undefined;
     const minPriceParam = searchParams.get("minPrice");
@@ -116,13 +126,41 @@ const Vehicles = () => {
       status,
     };
 
-    setFilters(initialFilters);
-    setCurrentPage(page);
-    setSearchTerm(search);
+    // Only update if values actually changed to prevent loops
+    const filtersChanged = 
+      filters.category !== category ||
+      filters.make !== make ||
+      filters.minPrice !== (minPriceParam ? parseInt(minPriceParam) : undefined) ||
+      filters.maxPrice !== (maxPriceParam ? parseInt(maxPriceParam) : undefined) ||
+      filters.minYear !== (minYearParam ? parseInt(minYearParam) : undefined) ||
+      filters.maxYear !== (maxYearParam ? parseInt(maxYearParam) : undefined) ||
+      filters.status !== status;
+    
+    const pageChanged = currentPage !== page;
+    const searchChanged = activeSearchTerm !== search;
+
+    if (filtersChanged || pageChanged || searchChanged || !hasInitializedRef.current) {
+      isSyncingFromUrlRef.current = true;
+      setFilters(initialFilters);
+      setCurrentPage(page);
+      setSearchTerm(search);
+      setActiveSearchTerm(search); // Set active search from URL
+      hasInitializedRef.current = true;
+      
+      // Reset flag after state updates
+      setTimeout(() => {
+        isSyncingFromUrlRef.current = false;
+      }, 0);
+    }
   }, [searchParams]);
 
-  // Update URL params when filters change
+  // Update URL params when filters change (only if not syncing from URL)
+  // Use a ref to track the last URL to prevent unnecessary updates
+  const lastUrlRef = useRef<string>("");
+  
   useEffect(() => {
+    if (isSyncingFromUrlRef.current || !hasInitializedRef.current) return;
+    
     const params = new URLSearchParams();
 
     if (filters.category) params.set("category", filters.category);
@@ -133,15 +171,40 @@ const Vehicles = () => {
     if (filters.maxYear) params.set("maxYear", filters.maxYear.toString());
     if (filters.status) params.set("status", filters.status);
     if (currentPage > 1) params.set("page", currentPage.toString());
-    if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
+    if (activeSearchTerm) params.set("search", activeSearchTerm);
 
-    router.push(`${pathname || ''}?${params.toString()}` as any);
-  }, [filters, currentPage, debouncedSearchTerm, router, pathname]);
+    const newUrl = `${pathname || ''}?${params.toString()}`;
+    
+    // Only update URL if it actually changed from the last one
+    if (newUrl !== lastUrlRef.current) {
+      lastUrlRef.current = newUrl;
+      router.replace(newUrl as any, { scroll: false });
+    }
+  }, [filters, currentPage, activeSearchTerm, router, pathname]);
 
   // Fetch vehicles when filters, page, or search term changes
+  // Use a ref to prevent duplicate calls
+  const fetchingRef = useRef(false);
+  
   useEffect(() => {
-    fetchVehicles();
-  }, [filters, currentPage, debouncedSearchTerm, sortOption]);
+    const hasFilters = Object.keys(filters).length > 0;
+    const hasSearch = activeSearchTerm.trim().length > 0;
+    const shouldFetch = hasFilters || hasSearch || currentPage > 1;
+    
+    if (shouldFetch) {
+      // Prevent duplicate calls
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
+      fetchVehicles().finally(() => {
+        fetchingRef.current = false;
+      });
+    } else {
+      // Reset to initial vehicles when filters/search are cleared and on page 1
+      setVehicles(initialVehicles);
+      setTotalPages(1);
+    }
+    // eslint-disable-next-line
+  }, [filters, currentPage, activeSearchTerm, sortOption]);
 
   const fetchVehicles = async () => {
     setLoading(true);
@@ -177,15 +240,24 @@ const Vehicles = () => {
         query = query.lte("year", filters.maxYear);
       }
 
-      if (debouncedSearchTerm) {
-        const isNumber = !isNaN(Number(debouncedSearchTerm));
-        if (isNumber) {
-          const value = parseInt(debouncedSearchTerm);
-          query = query.gte("year", value);
-        } else {
-          query = query.or(
-            `title.ilike.%${debouncedSearchTerm}%,make.ilike.%${debouncedSearchTerm}%,model.ilike.%${debouncedSearchTerm}%`
-          );
+      if (activeSearchTerm) {
+        const searchTerm = activeSearchTerm.trim();
+        if (searchTerm.length > 0) {
+          // Check if it's a 4-digit year
+          const isYear = /^\d{4}$/.test(searchTerm);
+          if (isYear) {
+            const year = parseInt(searchTerm);
+            if (year >= 1900 && year <= 2100) {
+              query = query.eq("year", year);
+            }
+          } else {
+            // Text search - search in multiple fields with better accuracy
+            // Escape special characters for Supabase
+            const escapedTerm = searchTerm.replace(/[%_\\]/g, '\\$&');
+            query = query.or(
+              `title.ilike.%${escapedTerm}%,make.ilike.%${escapedTerm}%,model.ilike.%${escapedTerm}%,description.ilike.%${escapedTerm}%`
+            );
+          }
         }
       }
 
@@ -242,7 +314,15 @@ const Vehicles = () => {
   };
 
   const handleFilterChange = (key: keyof VehicleFilters, value: string | number | undefined) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+    setFilters((prev) => {
+      const newFilters: VehicleFilters = { ...prev };
+      if (value === undefined || value === "" || value === "all" || value === 0) {
+        delete newFilters[key];
+      } else {
+        (newFilters as any)[key] = value;
+      }
+      return newFilters;
+    });
     setCurrentPage(1); // Reset to first page when filters change
   };
 
@@ -250,9 +330,21 @@ const Vehicles = () => {
     router.push(("/vehicles/category/" + category) as any);
   };
 
+  const handleSearch = () => {
+    setActiveSearchTerm(searchTerm.trim());
+    setCurrentPage(1); // Reset to first page on new search
+  };
+
+  const handleClearSearch = () => {
+    setSearchTerm("");
+    setActiveSearchTerm("");
+    setCurrentPage(1);
+  };
+
   const clearFilters = () => {
     setFilters({});
     setSearchTerm("");
+    setActiveSearchTerm("");
     setCurrentPage(1);
   };
 
@@ -339,11 +431,25 @@ const Vehicles = () => {
                 <div className="relative flex-grow">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   <Input
-                    placeholder="Search by make, model,year......"
-                    className="pl-10 focus-visible:border-none"
+                    placeholder="Search by make, model, year..."
+                    className="pl-10 pr-10 focus-visible:border-none"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleSearch();
+                      }
+                    }}
                   />
+                  {searchTerm && (
+                    <button
+                      onClick={handleClearSearch}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      type="button"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
                 </div>
 
                 <Button
@@ -357,7 +463,7 @@ const Vehicles = () => {
 
                 <Button
                   className="bg-sm-red hover:bg-sm-red-light"
-                  onClick={fetchVehicles}
+                  onClick={handleSearch}
                 >
                   <Search size={16} className="mr-2" /> Search Vehicles
                 </Button>
@@ -391,9 +497,9 @@ const Vehicles = () => {
                               className="flex items-center gap-1"
                             >
                               {key === "minPrice"
-                                ? "Min Price: $" + value
+                                ? "Min Price: ₹" + new Intl.NumberFormat("en-IN").format(value)
                                 : key === "maxPrice"
-                                ? "Max Price: $" + value
+                                ? "Max Price: ₹" + new Intl.NumberFormat("en-IN").format(value)
                                 : key === "minYear"
                                 ? "Min Year: " + value
                                 : key === "maxYear"
@@ -460,10 +566,11 @@ const Vehicles = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="0">Any Price</SelectItem>
-                          <SelectItem value="50000">Under $50,000</SelectItem>
-                          <SelectItem value="100000">Under $100,000</SelectItem>
-                          <SelectItem value="200000">Under $200,000</SelectItem>
-                          <SelectItem value="500000">Under $500,000</SelectItem>
+                          <SelectItem value="2500000">Under ₹25 Lakh</SelectItem>
+                          <SelectItem value="5000000">Under ₹50 Lakh</SelectItem>
+                          <SelectItem value="10000000">Under ₹1 Crore</SelectItem>
+                          <SelectItem value="20000000">Under ₹2 Crore</SelectItem>
+                          <SelectItem value="50000000">Under ₹5 Crore</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -532,7 +639,7 @@ const Vehicles = () => {
                   : filters.make
                   ? `${filters.make} Vehicles`
                   : "All Vehicles"}
-                {debouncedSearchTerm && ` - Search: "${debouncedSearchTerm}"`}
+                {activeSearchTerm && ` - Search: "${activeSearchTerm}"`}
               </h2>
 
               <div className="flex items-center space-x-3">

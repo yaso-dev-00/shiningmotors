@@ -60,6 +60,21 @@ const VehicleManagement = () => {
       if (error) throw error;
       
       setVehicles(vehicles.filter(vehicle => vehicle.id !== id));
+      
+      // Trigger revalidation for vehicles SSG/ISR
+      try {
+        await fetch("/api/vehicles/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: id,
+            action: "delete",
+          }),
+        });
+      } catch (revalidateError) {
+        console.error("Error triggering vehicles revalidation:", revalidateError);
+      }
+      
       toast({
         title: "Success",
         description: "Vehicle deleted successfully",

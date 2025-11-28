@@ -85,7 +85,7 @@ const SimRacingManagement = () => {
               <h1 className="text-3xl font-bold">SimRacing Management</h1>
               <p className="text-gray-600 mt-2">Manage your sim racing equipment and events</p>
             </div>
-            <NextLink href={"/vendor/simracing/create" as any}>
+            <NextLink href={"/vendor/simracing/product/create" as any}>
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Product
@@ -133,7 +133,7 @@ const SimRacingManagement = () => {
                     <Gamepad className="w-16 h-16 mx-auto text-gray-400 mb-4" />
                     <h3 className="text-lg font-semibold mb-2">No Products Yet</h3>
                     <p className="text-gray-600 mb-4">Start by adding your first sim racing product</p>
-                    <NextLink href={"/vendor/simracing/create" as any}>
+                    <NextLink href={"/vendor/simracing/product/create" as any}>
                       <Button>Add Your First Product</Button>
                     </NextLink>
                   </div>
@@ -145,7 +145,7 @@ const SimRacingManagement = () => {
                           <div className="flex justify-between items-start mb-2">
                             <h3 className="font-semibold text-lg truncate">{product.name}</h3>
                             <div className="flex gap-1">
-                              <NextLink href={`/admin/sim-products/edit/${product.id}` as any}>
+                              <NextLink href={`/vendor/simracing/product/${product.id}` as any}>
                                 <Button variant="outline" size="sm">
                                   <Edit className="w-4 h-4" />
                                 </Button>

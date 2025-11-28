@@ -226,6 +226,21 @@ const ShopManagement = () => {
       setProducts(
         products.filter((product) => product.id !== productToDelete.id)
       );
+      
+      // Trigger revalidation for shop SSG/ISR
+      try {
+        await fetch("/api/shop/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: productToDelete.id,
+            action: "delete",
+          }),
+        });
+      } catch (revalidateError) {
+        console.error("Error triggering shop revalidation:", revalidateError);
+      }
+      
       toast({
         title: "Success",
         description:
