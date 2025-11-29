@@ -14,19 +14,115 @@ function getFfmpegPath(): string {
   // Check ffmpeg-static first (if it exists and the file is present)
   // ffmpeg-static can be a string path or null/undefined
   if (ffmpegStatic && typeof ffmpegStatic === "string") {
-    // On Vercel, the file might exist but fs.existsSync might fail due to permissions
-    // Try to use it anyway if it's a valid string path
+    // Try the direct path first
+    if (fs.existsSync(ffmpegStatic)) {
+      console.log("[crop] Using ffmpeg-static (direct path exists):", ffmpegStatic);
+      return ffmpegStatic;
+    }
+    
+    // On Vercel, the path might have /ROOT/ prefix or need resolution
+    // Try to resolve the actual binary location
     try {
-      if (fs.existsSync(ffmpegStatic)) {
-        console.log("[crop] Using ffmpeg-static:", ffmpegStatic);
-        return ffmpegStatic;
-      } else {
-        // Even if existsSync fails, try using it (Vercel might have different file system behavior)
-        console.log("[crop] ffmpeg-static path exists check failed, but using path anyway:", ffmpegStatic);
-        return ffmpegStatic;
+      // Method 1: Try to resolve the package and find binary
+      let packageDir: string | null = null;
+      try {
+        const packagePath = require.resolve("ffmpeg-static/package.json");
+        packageDir = path.dirname(packagePath);
+      } catch {
+        // If that fails, try to extract from the path we have
+        const match = ffmpegStatic.match(/(.*node_modules\/ffmpeg-static)/);
+        if (match) {
+          packageDir = match[1];
+        }
       }
+      
+      // Method 2: Try removing /ROOT/ prefix (Vercel-specific)
+      const pathsToTry = [
+        // Original path
+        ffmpegStatic,
+        // Without /ROOT/ prefix
+        ffmpegStatic.replace(/^\/ROOT\//, ""),
+        // Resolved from package directory
+        ...(packageDir ? [
+          path.join(packageDir, "ffmpeg"),
+          path.join(packageDir, "ffmpeg.exe"),
+          path.join(packageDir, "bin", "ffmpeg"),
+          path.join(packageDir, "bin", "ffmpeg.exe"),
+        ] : []),
+        // Try resolving relative to current working directory
+        path.resolve(process.cwd(), ffmpegStatic.replace(/^\/ROOT\//, "")),
+        // Try absolute resolution
+        path.resolve(ffmpegStatic),
+      ];
+      
+      // Remove duplicates
+      const uniquePaths = [...new Set(pathsToTry)];
+      
+      for (const testPath of uniquePaths) {
+        try {
+          if (fs.existsSync(testPath)) {
+            console.log("[crop] Found ffmpeg at resolved path:", testPath);
+            return testPath;
+          }
+        } catch (err) {
+          // Continue to next path
+        }
+      }
+      
+      // If none found but we have a package directory, try the most likely paths
+      if (packageDir) {
+        // Check what files are actually in the package directory
+        try {
+          const packageFiles = fs.readdirSync(packageDir);
+          console.log("[crop] Files in ffmpeg-static package:", packageFiles);
+          
+          // Look for ffmpeg binary in the directory
+          for (const file of packageFiles) {
+            if (file === "ffmpeg" || file === "ffmpeg.exe" || file.startsWith("ffmpeg")) {
+              const binaryPath = path.join(packageDir, file);
+              if (fs.existsSync(binaryPath)) {
+                console.log("[crop] Found ffmpeg binary in package:", binaryPath);
+                return binaryPath;
+              }
+            }
+          }
+          
+          // Check subdirectories
+          for (const file of packageFiles) {
+            const filePath = path.join(packageDir, file);
+            try {
+              const stat = fs.statSync(filePath);
+              if (stat.isDirectory()) {
+                const subFiles = fs.readdirSync(filePath);
+                for (const subFile of subFiles) {
+                  if (subFile === "ffmpeg" || subFile === "ffmpeg.exe") {
+                    const binaryPath = path.join(filePath, subFile);
+                    if (fs.existsSync(binaryPath)) {
+                      console.log("[crop] Found ffmpeg binary in subdirectory:", binaryPath);
+                      return binaryPath;
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Skip if we can't read the directory
+            }
+          }
+        } catch (err) {
+          console.log("[crop] Could not read package directory:", err);
+        }
+        
+        // Try the most likely path anyway
+        const likelyPath = path.join(packageDir, "ffmpeg");
+        console.log("[crop] Using likely path (unverified):", likelyPath);
+        return likelyPath;
+      }
+      
+      // Last resort: use original path (might work if it's a special file system)
+      console.log("[crop] Using original path (unverified):", ffmpegStatic);
+      return ffmpegStatic;
     } catch (err) {
-      console.log("[crop] Error checking ffmpeg-static, using path anyway:", ffmpegStatic);
+      console.log("[crop] Error resolving path, using original:", ffmpegStatic, err);
       return ffmpegStatic;
     }
   }
