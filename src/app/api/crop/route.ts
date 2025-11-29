@@ -12,18 +12,44 @@ export const runtime = "nodejs";
 // Get ffmpeg path with proper validation
 function getFfmpegPath(): string {
   // Check ffmpeg-static first (if it exists and the file is present)
-  if (typeof ffmpegStatic === "string" && fs.existsSync(ffmpegStatic)) {
-    console.log("[crop] Using ffmpeg-static:", ffmpegStatic);
-    return ffmpegStatic;
+  // ffmpeg-static can be a string path or null/undefined
+  if (ffmpegStatic && typeof ffmpegStatic === "string") {
+    // On Vercel, the file might exist but fs.existsSync might fail due to permissions
+    // Try to use it anyway if it's a valid string path
+    try {
+      if (fs.existsSync(ffmpegStatic)) {
+        console.log("[crop] Using ffmpeg-static:", ffmpegStatic);
+        return ffmpegStatic;
+      } else {
+        // Even if existsSync fails, try using it (Vercel might have different file system behavior)
+        console.log("[crop] ffmpeg-static path exists check failed, but using path anyway:", ffmpegStatic);
+        return ffmpegStatic;
+      }
+    } catch (err) {
+      console.log("[crop] Error checking ffmpeg-static, using path anyway:", ffmpegStatic);
+      return ffmpegStatic;
+    }
   }
   
   // Check environment variable
-  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
-    console.log("[crop] Using FFMPEG_PATH:", process.env.FFMPEG_PATH);
-    return process.env.FFMPEG_PATH;
+  if (process.env.FFMPEG_PATH) {
+    try {
+      if (fs.existsSync(process.env.FFMPEG_PATH)) {
+        console.log("[crop] Using FFMPEG_PATH:", process.env.FFMPEG_PATH);
+        return process.env.FFMPEG_PATH;
+      } else {
+        // Try using it anyway
+        console.log("[crop] FFMPEG_PATH exists check failed, but using path anyway:", process.env.FFMPEG_PATH);
+        return process.env.FFMPEG_PATH;
+      }
+    } catch (err) {
+      console.log("[crop] Error checking FFMPEG_PATH, using path anyway:", process.env.FFMPEG_PATH);
+      return process.env.FFMPEG_PATH;
+    }
   }
   
   // Try to find ffmpeg in system PATH (Windows: where, Unix: which)
+  // This won't work on Vercel but might work locally
   try {
     const isWindows = os.platform() === "win32";
     const command = isWindows ? "where ffmpeg" : "which ffmpeg";
@@ -38,6 +64,8 @@ function getFfmpegPath(): string {
   }
   
   // Fallback to system ffmpeg (must be in PATH)
+  // This should not happen if ffmpeg-static is properly installed
+  console.warn("[crop] Falling back to 'ffmpeg' command - this may fail if not in PATH");
   return "ffmpeg";
 }
 
@@ -83,11 +111,29 @@ export async function POST(req: NextRequest) {
     // Get and validate ffmpeg path
     const ffmpegPath = getFfmpegPath();
     
-    // If it's not "ffmpeg" (system PATH), verify the file exists
-    if (ffmpegPath !== "ffmpeg" && !fs.existsSync(ffmpegPath)) {
-      throw new Error(
-        `ffmpeg binary not found at: ${ffmpegPath}. Please install ffmpeg or set FFMPEG_PATH environment variable.`
-      );
+    // Log the path being used for debugging
+    console.log("[crop] Final ffmpeg path:", ffmpegPath);
+    console.log("[crop] ffmpeg-static value:", ffmpegStatic);
+    
+    // On Vercel, file existence checks might fail due to serverless environment
+    // We'll try to use the path anyway and let spawn handle the error
+    // Only validate if we're not using the fallback "ffmpeg" command
+    if (ffmpegPath !== "ffmpeg") {
+      try {
+        if (fs.existsSync(ffmpegPath)) {
+          // Make sure the binary is executable (important on Unix systems like Vercel)
+          try {
+            fs.chmodSync(ffmpegPath, 0o755);
+          } catch (chmodErr) {
+            // Ignore chmod errors - file might already be executable or on Windows
+            console.log("[crop] Could not set execute permissions (this is OK on Windows or if already executable)");
+          }
+        } else {
+          console.warn(`[crop] Warning: ffmpeg path not found at ${ffmpegPath}, but attempting to use it anyway (Vercel serverless behavior)`);
+        }
+      } catch (err) {
+        console.warn(`[crop] Warning: Could not verify ffmpeg path existence, but attempting to use it anyway:`, err);
+      }
     }
 
     // Run ffmpeg crop via CLI
