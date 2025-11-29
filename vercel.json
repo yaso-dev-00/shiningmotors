@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "src/app/api/crop/route.ts": {
+      "memory": 3008,
+      "maxDuration": 30
+    }
+  },
+  "buildCommand": "npm run build"
+}
+
