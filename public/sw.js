@@ -30,19 +30,41 @@ self.addEventListener('push', function(event) {
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   
-  if (event.action === 'view') {
+  // Handle click on notification (not just action button)
+  if (event.action === 'view' || !event.action) {
     // Open the app to relevant page based on notification type
     const data = event.notification.data;
     let url = '/';
     
-    if (data.type === 'product_purchase' || data.type === 'product_update') {
-      url = `/product/${data.data.product_id}`;
+    // Social notification types
+    if (data.type === 'post_like' || data.type === 'post_comment') {
+      url = data.url || `/social/post/${data.data?.post_id || ''}`;
+    } else if (data.type === 'new_post') {
+      url = data.url || `/social/post/${data.data?.post_id || ''}`;
+    } else if (data.type === 'test') {
+      url = data.url || '/';
+    } else if (data.type === 'product_purchase' || data.type === 'product_update') {
+      url = `/shop/product/${data.data?.product_id || ''}`;
     } else if (data.type === 'order_status') {
-      url = `/order/${data.data.order_id}`;
+      url = `/shop/orders/${data.data?.order_id || ''}`;
+    } else if (data.url) {
+      url = data.url;
     }
     
     event.waitUntil(
-      clients.openWindow(url)
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+        // Check if there's already a window/tab open with the target URL
+        for (let i = 0; i < clientList.length; i++) {
+          const client = clientList[i];
+          if (client.url === url && 'focus' in client) {
+            return client.focus();
+          }
+        }
+        // If no window is open, open a new one
+        if (clients.openWindow) {
+          return clients.openWindow(url);
+        }
+      })
     );
   }
 });

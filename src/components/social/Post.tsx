@@ -172,7 +172,7 @@ const Post = ({
       (entries) => {
         entries.forEach((entry) => {
           const video = entry.target as HTMLVideoElement;
-
+         
           if (entry.intersectionRatio === 1) {
             if (
               currentlyPlayingRef.current &&

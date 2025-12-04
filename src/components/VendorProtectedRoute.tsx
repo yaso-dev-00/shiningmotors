@@ -1,8 +1,9 @@
 import React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { vendorApi } from "@/integrations/supabase/modules/vendors";
 import { useQuery } from "@tanstack/react-query";
+import { storeRedirectPath } from "@/lib/utils/routeRemember";
 
 interface VendorProtectedRouteProps {
   children: React.ReactNode;
@@ -15,6 +16,7 @@ export const VendorProtectedRoute: React.FC<VendorProtectedRouteProps> = ({
 }) => {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   
   const { data: vendorData, isLoading: vendorLoading } = useQuery({
     queryKey: ["vendor-registration", user?.id],
@@ -37,6 +39,10 @@ export const VendorProtectedRoute: React.FC<VendorProtectedRouteProps> = ({
     return null;
   }
   if (!user) {
+    // Store the current route BEFORE redirecting
+    if (pathname && pathname !== "/auth") {
+      storeRedirectPath(pathname);
+    }
     router.replace("/auth");
     return null;
   }

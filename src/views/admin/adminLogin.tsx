@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -27,6 +27,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { loginSchema, type LoginInput } from "@/lib/validations/auth";
+import { getRedirectFromUrlOrStorage, clearRedirectPath } from "@/lib/utils/routeRemember";
+import type { Route } from "next";
 
 const AdminAuth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -34,6 +36,7 @@ const AdminAuth = () => {
   const [errorMessage, setErrorMessage] = useState("");
   const { adminLogin, isAuthenticated } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const loginForm = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -49,12 +52,28 @@ const AdminAuth = () => {
     const success = await adminLogin(data.email, data.password);
     if (!success) {
       setErrorMessage("Invalid admin credentials.");
+      setIsLoading(false);
+      return;
+    }
+    
+    // If login successful, redirect to stored path or admin dashboard
+    if (success && isAuthenticated) {
+      const redirectPath = getRedirectFromUrlOrStorage(searchParams);
+      clearRedirectPath();
+      router.replace((redirectPath || '/admin') as Route);
     }
     setIsLoading(false);
   };
+  
+  useEffect(() => {
+    if (isAuthenticated) {
+      const redirectPath = getRedirectFromUrlOrStorage(searchParams);
+      clearRedirectPath();
+      router.replace((redirectPath || '/admin') as Route);
+    }
+  }, [isAuthenticated, router, searchParams]);
+  
   if (isAuthenticated) {
-    // client redirect
-    router.replace('/admin');
     return null;
   }
 

@@ -1,26 +1,156 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-
-interface PushSubscriptionData {
-  user_id: string;
-  subscription: PushSubscription;
-}
+import { messaging } from '@/lib/firebase-client';
+import { getToken, onMessage } from 'firebase/messaging';
 
 export const usePushNotifications = () => {
   const [permission, setPermission] = useState<NotificationPermission>('default');
-  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
+  const [fcmToken, setFcmToken] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check if browser supports notifications and service workers
-    setIsSupported('Notification' in window && 'serviceWorker' in navigator);
+    // Check if browser supports notifications, service workers, and push manager
+    const hasNotifications = 'Notification' in window;
+    const hasServiceWorker = 'serviceWorker' in navigator;
+    const hasPushManager = hasServiceWorker && 'PushManager' in window;
+    
+    setIsSupported(hasNotifications && hasServiceWorker && hasPushManager);
     
     if ('Notification' in window) {
       setPermission(Notification.permission);
     }
   }, []);
+
+  // Check subscription status when user changes
+  useEffect(() => {
+    const checkSubscriptionStatus = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          // User logged out - reset state
+          setFcmToken(null);
+          return;
+        }
+
+        // Check if user has an active subscription for this device
+        const { data: subscriptions } = await supabase
+          .from('push_subscriptions')
+          .select('subscription')
+          .eq('user_id', user.id);
+
+        if (subscriptions && subscriptions.length > 0) {
+          // Try to get current FCM token to match
+          if (messaging && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              const registration = await navigator.serviceWorker.ready;
+              const currentToken = await getToken(messaging, {
+                vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || '',
+                serviceWorkerRegistration: registration,
+              });
+              
+              if (currentToken) {
+                // Check if this token exists in subscriptions
+                const hasToken = subscriptions.some((sub: any) => {
+                  const subData = sub.subscription;
+                  return subData?.token === currentToken || subData?.fcmToken === currentToken;
+                });
+                
+                if (hasToken) {
+                  setFcmToken(currentToken);
+                } else {
+                  setFcmToken(null);
+                }
+              } else {
+                setFcmToken(null);
+              }
+            } catch (error) {
+              console.error('Error checking token:', error);
+              setFcmToken(null);
+            }
+          } else {
+            setFcmToken(null);
+          }
+        } else {
+          setFcmToken(null);
+        }
+      } catch (error) {
+        console.error('Error checking subscription status:', error);
+        setFcmToken(null);
+      }
+    };
+
+    checkSubscriptionStatus();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !messaging) return;
+
+    const unsubscribe = onMessage(messaging, async (payload) => {
+      console.log('[firebase] foreground message', payload);
+      const title =
+        payload.data?.title ||
+        payload.notification?.title ||
+        'New notification';
+      const description =
+        payload.data?.message ||
+        payload.notification?.body ||
+        '';
+
+      // Show in-app toast
+      toast({
+        title,
+        description,
+      });
+
+      // Show system notification using service worker (works on mobile PWA)
+      if (Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          if (registration && registration.showNotification) {
+            await registration.showNotification(title, {
+              body: description,
+              icon: payload.data?.icon || '/logo.jpg',
+              badge: payload.data?.badge || '/logo.jpg',
+              tag: payload.data?.tag || `notification_${Date.now()}`,
+              data: payload.data || {},
+              actions: payload.data?.actions || [
+                {
+                  action: 'view',
+                  title: 'View',
+                  icon: '/logo.jpg'
+                },
+                {
+                  action: 'dismiss',
+                  title: 'Dismiss'
+                }
+              ],
+            } as NotificationOptions & { actions?: Array<{ action: string; title: string; icon?: string }> });
+          }
+        } catch (error) {
+          console.error('Error showing notification via service worker:', error);
+          // Fallback: try Notification constructor only if available (desktop browsers)
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            try {
+              new Notification(title, {
+                body: description,
+                icon: payload.data?.icon || '/logo.jpg',
+                tag: payload.data?.tag || 'notification',
+                data: payload.data || {},
+              });
+            } catch (notifError) {
+              console.error('Notification constructor also failed:', notifError);
+            }
+          }
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [toast]);
 
   const requestPermission = async () => {
     if (!isSupported) {
@@ -60,32 +190,182 @@ export const usePushNotifications = () => {
 
   const subscribeUser = async () => {
     try {
-      // Register service worker
-      const registration = await navigator.serviceWorker.register('/sw.js');
+      if (!messaging) {
+        throw new Error('Firebase messaging not initialized. Please check Firebase configuration.');
+      }
+
+      // Check if service workers and push manager are supported
+      if (!('serviceWorker' in navigator)) {
+        throw new Error('Service workers are not supported in this browser.');
+      }
       
-      // Wait for service worker to be ready
-      await navigator.serviceWorker.ready;
+      if (!('PushManager' in window)) {
+        throw new Error('Push notifications are not supported in this browser.');
+      }
 
-      // Subscribe to push notifications
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(
-          // You'll need to get this from your push service (e.g., Firebase, OneSignal)
-          process.env.VAPID_PUBLIC_KEY || 'BEl62iUYgUivxIkv69yViEuiBIa40HI0DLdaKMKqSCb8s6PjL8-l8A9_-cOYfaA3X0VJxGNNj8F_5n6DktpXboo'
-        )
-      });
+      // Check for existing service worker registration first
+      let registration: ServiceWorkerRegistration | null = null;
+      
+      // Try to get existing registration
+      if (navigator.serviceWorker.controller) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        registration = registrations.find(reg => 
+          reg.active?.scriptURL.includes('firebase-messaging-sw.js') ||
+          reg.active?.scriptURL.includes('firebase-messaging')
+        ) || null;
+      }
 
-      setSubscription(subscription);
+      // If no existing registration, register a new one
+      if (!registration) {
+        try {
+          registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+            scope: '/',
+          });
+        } catch (error: any) {
+          throw new Error(`Failed to register service worker: ${error.message}`);
+        }
+      }
 
-      // Save subscription to database
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.functions.invoke('save-push-subscription', {
-          body: {
-            user_id: user.id,
-            subscription: subscription.toJSON()
+      // Wait for service worker to be ready - this gives us the active registration
+      const activeRegistration = await navigator.serviceWorker.ready;
+      
+      // Ensure we have a valid registration
+      if (!activeRegistration) {
+        throw new Error('Service worker registration failed. Please refresh the page and try again.');
+      }
+      
+      // Wait for service worker to be active (not just installing)
+      if (activeRegistration.installing) {
+        await new Promise<void>((resolve) => {
+          const installingWorker = activeRegistration.installing;
+          if (installingWorker) {
+            const stateChangeHandler = () => {
+              if (installingWorker.state === 'activated' || installingWorker.state === 'redundant') {
+                installingWorker.removeEventListener('statechange', stateChangeHandler);
+                resolve();
+              }
+            };
+            installingWorker.addEventListener('statechange', stateChangeHandler);
+            // Timeout after 10 seconds
+            setTimeout(() => {
+              installingWorker.removeEventListener('statechange', stateChangeHandler);
+              resolve();
+            }, 10000);
+          } else {
+            resolve();
           }
         });
+      }
+      
+      // Ensure registration has pushManager
+      if (!activeRegistration.pushManager) {
+        // Wait a bit and check again
+        await new Promise(resolve => setTimeout(resolve, 500));
+        if (!activeRegistration.pushManager) {
+          throw new Error('Service worker push manager is not available. Please ensure your browser supports push notifications and try again.');
+        }
+      }
+
+      // Get FCM token
+      const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+      if (!vapidKey) {
+        throw new Error('Firebase VAPID key not configured. Please set NEXT_PUBLIC_FIREBASE_VAPID_KEY in your environment variables.');
+      }
+
+      // Ensure service worker is fully activated (especially important on mobile)
+      if (activeRegistration.active) {
+        // Wait a bit more for mobile browsers
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Verify pushManager is available
+      if (!activeRegistration.pushManager) {
+        throw new Error('Push Manager is not available. Your browser may not support push notifications.');
+      }
+
+      // Check if push subscription is supported (skip on mobile as FCM handles this)
+      // This test can sometimes fail on mobile, so we'll skip it and let FCM handle it
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      
+      if (!isMobile) {
+        try {
+          const subscription = await activeRegistration.pushManager.getSubscription();
+          if (!subscription) {
+            // Try to subscribe to verify push is working
+            const vapidKeyArray = urlBase64ToUint8Array(vapidKey);
+            const testSubscription = await activeRegistration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: new Uint8Array(vapidKeyArray.buffer.slice(0)) as BufferSource,
+            });
+            // Unsubscribe immediately - we just wanted to test
+            await testSubscription.unsubscribe();
+          }
+        } catch (pushError: any) {
+          console.error('Push subscription test failed:', pushError);
+          if (pushError.message?.includes('not supported') || pushError.name === 'NotSupportedError') {
+            throw new Error('Push notifications are not supported on this device or browser.');
+          }
+          // Continue anyway - some browsers allow FCM without explicit subscription
+        }
+      }
+
+      // Get token - explicitly pass the registration to ensure Firebase uses the correct one
+      // On mobile, sometimes we need to retry
+      let token: string | null = null;
+      let retries = 3;
+      
+      while (!token && retries > 0) {
+        try {
+          token = await getToken(messaging, {
+            vapidKey: vapidKey,
+            serviceWorkerRegistration: activeRegistration,
+          });
+          
+          if (token) break;
+        } catch (tokenError: any) {
+          console.error(`Token fetch attempt ${4 - retries} failed:`, tokenError);
+          
+          if (retries === 1) {
+            // Last attempt failed
+            if (tokenError.message?.includes('AbortError') || tokenError.message?.includes('push service error')) {
+              throw new Error('Push service error. Please ensure you are using HTTPS and your device supports push notifications. Try refreshing the page and enabling notifications again.');
+            }
+            throw new Error(tokenError.message || 'Failed to get FCM token. Please try again.');
+          }
+          
+          // Wait before retry (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
+        }
+        retries--;
+      }
+
+      if (!token) {
+        throw new Error('No FCM token available. Please check Firebase configuration and service worker.');
+      }
+
+      setFcmToken(token);
+
+      // Save FCM token to database via Next.js API route
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const response = await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_id: user.id,
+            subscription: {
+              token: token,
+              fcmToken: token,
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to save subscription');
+        }
       }
 
       toast({
@@ -93,12 +373,20 @@ export const usePushNotifications = () => {
         description: "Push notifications enabled successfully!",
       });
 
-      return subscription;
-    } catch (error) {
+      return token;
+    } catch (error: any) {
       console.error('Error subscribing to push notifications:', error);
+      
+      let errorMessage = "Failed to enable push notifications.";
+      if (error.message?.includes('Firebase') || error.message?.includes('VAPID')) {
+        errorMessage = "Push notifications are not configured. Please contact the administrator or check Firebase configuration.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Error",
-        description: "Failed to enable push notifications.",
+        description: errorMessage,
         variant: "destructive"
       });
       return null;
@@ -106,66 +394,170 @@ export const usePushNotifications = () => {
   };
 
   const unsubscribe = async () => {
-    if (subscription) {
-      try {
-        await subscription.unsubscribe();
-        setSubscription(null);
-        
-        // Remove subscription from database
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await supabase.functions.invoke('remove-push-subscription', {
-            body: { user_id: user.id }
-          });
-        }
-
-        toast({
-          title: "Success",
-          description: "Push notifications disabled.",
-        });
-      } catch (error) {
-        console.error('Error unsubscribing from push notifications:', error);
-        toast({
-          title: "Error",
-          description: "Failed to disable push notifications.",
-          variant: "destructive"
-        });
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setFcmToken(null);
+        return;
       }
-    }
-  };
 
-  const sendTestNotification = async () => {
-    if (permission === 'granted') {
-      new Notification('Test Notification', {
-        body: 'This is a test notification from Shining Motors!',
-        icon: '/logo.jpg',
-        tag: 'test'
+      // Get current token if we have one
+      let tokenToRemove = fcmToken;
+      
+      // If no token in state, try to get it from service worker
+      if (!tokenToRemove && messaging && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          tokenToRemove = await getToken(messaging, {
+            vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || '',
+            serviceWorkerRegistration: registration,
+          });
+        } catch (error) {
+          console.error('Error getting token for unsubscribe:', error);
+        }
+      }
+
+      // Remove all subscriptions for this user (or specific token if we have it)
+      const response = await fetch('/api/push/subscribe', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          ...(tokenToRemove && { fcm_token: tokenToRemove })
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to remove subscription');
+      }
+
+      setFcmToken(null);
+
+      toast({
+        title: "Success",
+        description: "Push notifications disabled.",
+      });
+    } catch (error: any) {
+      console.error('Error unsubscribing from push notifications:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to disable push notifications.",
+        variant: "destructive"
       });
     }
   };
 
+  const sendTestNotification = async () => {
+    try {
+      if (permission !== 'granted') {
+        toast({
+          title: "Permission Required",
+          description: "Please enable push notifications first.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Error",
+          description: "You must be logged in to send test notifications.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Check if user has a subscription
+      const { data: subscriptions } = await supabase
+        .from("push_subscriptions")
+        .select("id")
+        .eq("user_id", user.id)
+        .limit(1);
+
+      if (!subscriptions || subscriptions.length === 0) {
+        toast({
+          title: "No Subscription",
+          description: "Please enable push notifications first to create a subscription.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Send test notification through API
+      const response = await fetch('/api/push/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          notification: {
+            title: 'Test Notification',
+            message: 'This is a test notification from Shining Motors!',
+            type: 'test',
+            data: {},
+            url: '/'
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send test notification');
+      }
+
+      const result = await response.json();
+      
+      if (result.sent > 0) {
+        toast({
+          title: "Test Sent",
+          description: "Test notification sent successfully! Check your notifications.",
+        });
+      } else {
+        toast({
+          title: "Warning",
+          description: "Test notification was not sent. Please check your subscription.",
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      console.error('Error sending test notification:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send test notification.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Helper function to convert VAPID key to Uint8Array
+  const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
   return {
     permission,
-    subscription,
+    subscription: fcmToken, // Keep for backward compatibility
     isSupported,
     requestPermission,
+    subscribeUser,
     unsubscribe,
     sendTestNotification
   };
 };
-
-// Helper function to convert VAPID key
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}

@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useProfileUpload } from "@/hooks/use-profile-upload";
+import { storeRedirectPath } from "@/lib/utils/routeRemember";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import BottomNav from "@/components/BottomNav";
@@ -44,7 +45,7 @@ interface Profile {
 }
 
 const Settings = () => {
-  const { user,userRole } = useAuth();
+  const { user, userRole, loading: authLoading, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -87,9 +88,24 @@ const Settings = () => {
   };
 
   useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated) {
+      // Store the current route before redirecting
+      if (typeof window !== 'undefined' && window.location.pathname && window.location.pathname !== "/auth") {
+        storeRedirectPath(window.location.pathname);
+      }
+      router.replace("/auth");
+    }
+  }, [authLoading, isAuthenticated, router]);
+
+  useEffect(() => {
     const fetchProfile = async () => {
       try {
-        if (!user) return;
+        if (!user) {
+          setLoading(false);
+          return;
+        }
 
         const { data, error } = await supabase
           .from("profiles")
@@ -99,7 +115,6 @@ const Settings = () => {
 
         if (error) throw error;
 
-        console.log({ data });
         setProfile(data as Profile);
         setOriginalProfile(data as Profile);
         if (data.avatar_url) {
@@ -250,6 +265,20 @@ const uploadAvatar = async () => {
       setCoverFile(null);
     }
   };
+
+  if (authLoading || (!isAuthenticated && !authLoading)) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <main className="container mx-auto px-4 py-4 md:py-8">
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-sm-red" />
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   if (loading) {
     return (

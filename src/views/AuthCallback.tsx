@@ -1,8 +1,10 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import type { Route } from "next";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { getRedirectPath, clearRedirectPath } from "@/lib/utils/routeRemember";
 
 const AuthCallback = () => {
   const router = useRouter();
@@ -20,13 +22,23 @@ const AuthCallback = () => {
           description: "You've successfully signed in with Google.",
         });
         
+        // Get redirect path from sessionStorage (stored before OAuth)
+        const redirectPath = typeof window !== 'undefined' 
+          ? sessionStorage.getItem('oauth_redirect_path') || getRedirectPath()
+          : null;
+        
+        if (redirectPath && typeof window !== 'undefined') {
+          sessionStorage.removeItem('oauth_redirect_path');
+        }
+        clearRedirectPath();
+        
         // Close the popup and notify the parent window
         if (window.opener) {
           window.opener.postMessage('signin_success', window.location.origin);
           window.close();
         } else {
           // Fallback for cases where it's not a popup
-          router.replace("/");
+          router.replace((redirectPath || "/") as Route);
         }
       } catch (error: any) {
         console.error("Error during OAuth callback:", error);

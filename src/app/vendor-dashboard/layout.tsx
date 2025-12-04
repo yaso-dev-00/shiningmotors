@@ -1,21 +1,27 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import type { Route } from "next";
 import { useAuth } from "@/contexts/AuthContext";
+import { storeRedirectPath } from "@/lib/utils/routeRemember";
 
 export default function VendorDashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, loading } = useAuth();
 
   useEffect(() => {
     if (loading) return;
     if (!user) {
+      // Store the current route before redirecting
+      if (pathname && pathname !== "/auth") {
+        storeRedirectPath(pathname);
+      }
       router.replace("/auth" as Route);
       return;
     }
-  }, [loading, user, router]);
+  }, [loading, user, router, pathname]);
 
   if (loading) {
     return (
@@ -29,5 +35,8 @@ export default function VendorDashboardLayout({ children }: { children: React.Re
 
   return <>{children}</>;
 }
+
+
+
 
 

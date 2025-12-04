@@ -104,6 +104,7 @@ const ServiceCard = ({
                 src={media_url}
                 alt={title}
                 fill
+                priority
                 className="object-cover"
                 sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 100vw"
               />

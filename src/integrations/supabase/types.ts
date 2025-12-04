@@ -618,6 +618,7 @@ export type Database = {
           last_seen: string | null;
           location: string | null;
           mobile_phone: string | null;
+          notification_preferences: Json | null;
           phone_verified: boolean | null;
           role: string | null;
           saved: string[] | null;
@@ -641,6 +642,7 @@ export type Database = {
           last_seen?: string | null;
           location?: string | null;
           mobile_phone?: string | null;
+          notification_preferences?: Json | null;
           phone_verified?: boolean | null;
           role?: string | null;
           saved?: string[] | null;
@@ -664,6 +666,7 @@ export type Database = {
           last_seen?: string | null;
           location?: string | null;
           mobile_phone?: string | null;
+          notification_preferences?: Json | null;
           phone_verified?: boolean | null;
           role?: string | null;
           saved?: string[] | null;

@@ -1,0 +1,27 @@
+{
+  "name": "Shining Motors",
+  "short_name": "Shining Motors",
+  "description": "Shining Motors Social Hub – events, services, sim racing, marketplace and community in one platform.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#030712",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
+
+
+
+
+
