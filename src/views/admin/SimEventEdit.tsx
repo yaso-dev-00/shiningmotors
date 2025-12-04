@@ -148,7 +148,7 @@ const SimEventEdit = () => {
          {
           toast({
            title: "Event Limit Reached",
-description: "You’ve already added events for all available leagues."
+description: "You've already added events for all available leagues."
           });
           if(isVendorContext)
           {

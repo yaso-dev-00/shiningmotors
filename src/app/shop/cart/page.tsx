@@ -1,7 +1,12 @@
 import ShopCart from "@/views/ShopCart";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 export default function Page() {
-  return <ShopCart />;
+  return (
+    <ProtectedRoute>
+      <ShopCart />
+    </ProtectedRoute>
+  );
 }
 
 

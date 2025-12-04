@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import type { Route } from "next";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { vendorApi } from "@/integrations/supabase/modules/vendors";
+import { storeRedirectPath } from "@/lib/utils/routeRemember";
 
 export default function VendorLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, loading } = useAuth();
 
   const { data: vendorData, isLoading: vendorLoading } = useQuery({
@@ -20,6 +22,10 @@ export default function VendorLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (loading || vendorLoading) return;
     if (!user) {
+      // Store the current route before redirecting
+      if (pathname && pathname !== "/auth") {
+        storeRedirectPath(pathname);
+      }
       router.replace("/auth" as Route);
       return;
     }

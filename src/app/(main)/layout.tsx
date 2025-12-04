@@ -2,6 +2,7 @@
 
 import BottomNav from "@/components/BottomNav";
 import FloatingQuickSettings from "@/components/FloatingButton";
+import { RouteRemember } from "@/components/RouteRemember";
 import { FiMessageSquare } from "react-icons/fi";
 import { usePathname } from "next/navigation";
 
@@ -11,6 +12,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <>
+      <RouteRemember />
       {children}
       <BottomNav />
       <div className="lg:hidden">

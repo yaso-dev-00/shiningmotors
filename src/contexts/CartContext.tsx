@@ -177,6 +177,7 @@ export const CartProvider = ({ children }: CartProviderProps) => {
   const { user, isAuthenticated } = useAuth();
   const lastFetchedUserIdRef = useRef<string | null>(null);
   const didInitGuestRef = useRef(false);
+  const hasMergedCartRef = useRef(false);
 
   // Cache for sim products to avoid repeated API calls
   const simProductsCacheRef = useRef<Map<string, SimProductLite>>(new Map());
@@ -1090,12 +1091,91 @@ export const CartProvider = ({ children }: CartProviderProps) => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      if (lastFetchedUserIdRef.current === user.id) return;
-      lastFetchedUserIdRef.current = user.id;
-      fetchCartItems();
-      fetchAddresses();
-      fetchOrders();
+      if (lastFetchedUserIdRef.current === user.id && hasMergedCartRef.current) {
+        return;
+      }
+      
+      const initializeUserCart = async () => {
+        try {
+          // First, fetch database cart
+          await fetchCartItems();
+          
+          // Then, check for localStorage cart and merge (only once per login)
+          if (!hasMergedCartRef.current) {
+            const localCart = localStorage.getItem("cart");
+            if (localCart) {
+              try {
+                const localCartItems: CartItem[] = JSON.parse(localCart);
+                
+                if (localCartItems.length > 0) {
+                  // Get current database cart items
+                  const { data: dbCartItems } = await shopApi.cartItems.getByUserId(user.id);
+                  
+                  // Merge local cart items with database cart
+                  for (const localItem of localCartItems) {
+                    // Check if item already exists in database cart
+                    const existingDbItem = dbCartItems?.find(
+                      (item: any) => item.product_id === localItem.product_id
+                    );
+                    
+                    if (existingDbItem) {
+                      // Update quantity if needed (merge quantities)
+                      const newQuantity = Math.min(
+                        existingDbItem.quantity + localItem.quantity,
+                        localItem.inventory || Infinity
+                      );
+                      if (newQuantity !== existingDbItem.quantity) {
+                        await shopApi.cartItems.update(existingDbItem.id, {
+                          quantity: newQuantity,
+                        });
+                      }
+                    } else {
+                      // Add new item to database cart
+                      try {
+                        const { data: product } = await shopApi.products.getById(
+                          localItem.product_id
+                        );
+                        if (product) {
+                          await shopApi.cartItems.insert({
+                            user_id: user.id,
+                            product_id: localItem.product_id,
+                            quantity: localItem.quantity,
+                          });
+                        }
+                      } catch (error) {
+                        console.error(`Failed to add product ${localItem.product_id} to cart:`, error);
+                      }
+                    }
+                  }
+                  
+                  // Clear localStorage cart after merging
+                  localStorage.removeItem("cart");
+                  
+                  // Refresh cart items from database
+                  await fetchCartItems();
+                }
+              } catch (error) {
+                console.error("Error parsing cart data from localStorage:", error);
+                localStorage.removeItem("cart");
+              }
+            }
+            hasMergedCartRef.current = true;
+          }
+          
+          lastFetchedUserIdRef.current = user.id;
+          fetchAddresses();
+          fetchOrders();
+        } catch (error) {
+          console.error("Error initializing user cart:", error);
+        }
+      };
+      
+      initializeUserCart();
     } else {
+      // Reset merge flag when user logs out
+      hasMergedCartRef.current = false;
+      lastFetchedUserIdRef.current = null;
+      
       if (didInitGuestRef.current) return;
       didInitGuestRef.current = true;
       // Initialize with local storage data for non-authenticated users

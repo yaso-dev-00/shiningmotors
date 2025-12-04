@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Mail, Lock, User, Eye, EyeOff } from "lucide-react";
 import NextLink from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { Route } from "next";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -34,6 +35,7 @@ import {
 } from "@/lib/validations/auth";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import { getRedirectFromUrlOrStorage, clearRedirectPath } from "@/lib/utils/routeRemember";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -41,6 +43,7 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const { signIn, signUp, signInWithGoogle, isAuthenticated } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const loginForm = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -61,24 +64,51 @@ const Auth = () => {
 
   const handleSignIn = async (data: LoginInput) => {
     setIsLoading(true);
-    await signIn(data.email, data.password);
+    const result = await signIn(data.email, data.password);
     setIsLoading(false);
+    
+    // Redirect will be handled by useEffect when isAuthenticated changes
+    if (result?.error) {
+      // Error is already handled by AuthContext toast
+      return;
+    }
   };
 
   const handleSignUp = async (data: RegisterInput) => {
     setIsLoading(true);
-    await signUp(data.email, data.password, data.fullName);
+    const result = await signUp(data.email, data.password, data.fullName);
     setIsLoading(false);
+    
+    // Redirect will be handled by useEffect when isAuthenticated changes
+    if (result?.error) {
+      // Error is already handled by AuthContext toast
+      return;
+    }
   };
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
+    // Store redirect path before OAuth redirect
+    const redirectPath = getRedirectFromUrlOrStorage(searchParams);
+    if (redirectPath) {
+      // Store in sessionStorage for OAuth callback
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('oauth_redirect_path', redirectPath);
+      }
+    }
     await signInWithGoogle();
   };
 
   // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const redirectPath = getRedirectFromUrlOrStorage(searchParams);
+      clearRedirectPath();
+      router.replace((redirectPath || "/") as Route);
+    }
+  }, [isAuthenticated, router, searchParams]);
+  
   if (isAuthenticated) {
-    router.replace("/");
     return null;
   }
 

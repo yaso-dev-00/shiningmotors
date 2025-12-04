@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 import 'nprogress/nprogress.css';
 import Providers from './providers';
+import PwaRegister from '@/components/PwaRegister';
+import PwaInstallPrompt from '@/components/PwaInstallPrompt';
 
 export const metadata: Metadata = {
   title: {
@@ -34,6 +36,8 @@ export const metadata: Metadata = {
       'https://rzrroghnzintpxspwauf.supabase.co/storage/v1/object/public/outsource//shiningIcon.jpg',
     ],
   },
+  manifest: '/manifest.json',
+  themeColor: '#030712',
   icons: {
     icon: [
       {
@@ -50,7 +54,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <PwaRegister />
+        <Providers>
+          {children}
+          <PwaInstallPrompt />
+        </Providers>
       </body>
     </html>
   );

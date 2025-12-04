@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PostWithProfile } from "@/integrations/supabase/modules/social";
 import { socialApi } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/client";
 import PostCardWrapper from "./PostCardWrapper";
-import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import PostSkeleton from "../../lib/PostSkeleton";
 
@@ -18,6 +19,7 @@ const PostTabs = ({ renderAfterIndex, AfterComponent }: PostTabsProps) => {
   const [activeTab, setActiveTab] = useState("trending");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [openEmojiPostId, setOpenEmojiPostId] = useState<string | null>(null);
   const [reportedPostIds, setReportedPostIds] = useState<string[]>([]);
   const [openCollaboratorsPostId, setOpenCollaboratorsPostId] = useState<
@@ -136,6 +138,54 @@ const PostTabs = ({ renderAfterIndex, AfterComponent }: PostTabsProps) => {
   });
 
   const loaderRef = useRef(null);
+
+  // Real-time subscription for new posts from followed users
+  useEffect(() => {
+    if (!user) return;
+
+    // Get list of users being followed
+    const setupRealtimeSubscription = async () => {
+      const { data: followingData } = await socialApi.follows.getFollowing(user.id);
+      if (!followingData || followingData.length === 0) return;
+
+      const followingIds = followingData.map((f: any) => f.following_id);
+
+      // Subscribe to new posts from followed users
+      const channel = supabase
+        .channel("following-posts")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "posts",
+            filter: `user_id=in.(${followingIds.join(",")})`,
+          },
+          (payload) => {
+            const newPost = payload.new;
+            // Invalidate and refetch following posts to show new post
+            queryClient.invalidateQueries({ queryKey: ["posts", "following"] });
+            queryClient.invalidateQueries({ queryKey: ["posts", "feed"] });
+            
+            // If on following tab, show a visual indicator
+            if (activeTab === "following") {
+              // Optionally show a toast or badge for new post
+              console.log("New post from followed user:", newPost);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    };
+
+    const cleanup = setupRealtimeSubscription();
+    return () => {
+      cleanup.then((fn) => fn && fn());
+    };
+  }, [user, activeTab, queryClient]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
