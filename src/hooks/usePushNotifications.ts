@@ -268,7 +268,7 @@ export const usePushNotifications = () => {
 
       // Get FCM token
       const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
-      if (!vapidKey) {
+      if (!vapidKey || vapidKey.trim().length === 0) {
         throw new Error('Firebase VAPID key not configured. Please set NEXT_PUBLIC_FIREBASE_VAPID_KEY in your environment variables.');
       }
 
@@ -292,18 +292,30 @@ export const usePushNotifications = () => {
           const subscription = await activeRegistration.pushManager.getSubscription();
           if (!subscription) {
             // Try to subscribe to verify push is working
-            const vapidKeyArray = urlBase64ToUint8Array(vapidKey);
-            const testSubscription = await activeRegistration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: new Uint8Array(vapidKeyArray.buffer.slice(0)) as BufferSource,
-            });
-            // Unsubscribe immediately - we just wanted to test
-            await testSubscription.unsubscribe();
+            try {
+              const vapidKeyArray = urlBase64ToUint8Array(vapidKey);
+              const testSubscription = await activeRegistration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: new Uint8Array(vapidKeyArray.buffer.slice(0)) as BufferSource,
+              });
+              // Unsubscribe immediately - we just wanted to test
+              await testSubscription.unsubscribe();
+            } catch (vapidError: any) {
+              // If VAPID key is invalid, throw a more helpful error
+              if (vapidError.message?.includes('VAPID') || vapidError.message?.includes('base64') || vapidError.message?.includes('atob')) {
+                throw new Error(`Invalid VAPID key: ${vapidError.message}. Please check NEXT_PUBLIC_FIREBASE_VAPID_KEY in your Vercel environment variables.`);
+              }
+              throw vapidError;
+            }
           }
         } catch (pushError: any) {
           console.error('Push subscription test failed:', pushError);
           if (pushError.message?.includes('not supported') || pushError.name === 'NotSupportedError') {
             throw new Error('Push notifications are not supported on this device or browser.');
+          }
+          // If it's a VAPID key error, re-throw it
+          if (pushError.message?.includes('VAPID') || pushError.message?.includes('base64')) {
+            throw pushError;
           }
           // Continue anyway - some browsers allow FCM without explicit subscription
         }
@@ -537,18 +549,44 @@ export const usePushNotifications = () => {
 
   // Helper function to convert VAPID key to Uint8Array
   const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
-
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
+    // Validate input
+    if (!base64String || typeof base64String !== 'string' || base64String.trim().length === 0) {
+      throw new Error('VAPID key is empty or invalid. Please check NEXT_PUBLIC_FIREBASE_VAPID_KEY environment variable.');
     }
-    return outputArray;
+
+    // Remove any whitespace
+    const trimmed = base64String.trim();
+    
+    // Validate base64 format (basic check)
+    const base64Regex = /^[A-Za-z0-9_-]+$/;
+    if (!base64Regex.test(trimmed)) {
+      throw new Error('VAPID key contains invalid characters. It should be a valid base64 string.');
+    }
+
+    try {
+      const padding = '='.repeat((4 - trimmed.length % 4) % 4);
+      const base64 = (trimmed + padding)
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+
+      // Additional validation: ensure the string is not empty after processing
+      if (!base64 || base64.length === 0) {
+        throw new Error('VAPID key is empty after processing.');
+      }
+
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    } catch (error: any) {
+      if (error.message?.includes('atob') || error.message?.includes('decoded')) {
+        throw new Error('Failed to decode VAPID key. Please verify NEXT_PUBLIC_FIREBASE_VAPID_KEY is a valid base64 string.');
+      }
+      throw error;
+    }
   };
 
   return {
