@@ -45,8 +45,13 @@ export const usePushNotifications = () => {
           if (messaging && 'Notification' in window && Notification.permission === 'granted') {
             try {
               const registration = await navigator.serviceWorker.ready;
+              const vapidKeyForCheck = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY?.trim() || '';
+              if (!vapidKeyForCheck) {
+                console.warn('VAPID key not available for token check');
+                return;
+              }
               const currentToken = await getToken(messaging, {
-                vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || '',
+                vapidKey: vapidKeyForCheck,
                 serviceWorkerRegistration: registration,
               });
               
@@ -272,6 +277,28 @@ export const usePushNotifications = () => {
         throw new Error('Firebase VAPID key not configured. Please set NEXT_PUBLIC_FIREBASE_VAPID_KEY in your environment variables.');
       }
 
+      // Validate VAPID key format before passing to Firebase
+      // Firebase will try to decode it internally, so we need to validate it first
+      try {
+        // Test if the key can be decoded (this will catch invalid base64)
+        const testKey = vapidKey.trim();
+        const base64Regex = /^[A-Za-z0-9_-]+$/;
+        if (!base64Regex.test(testKey)) {
+          throw new Error('VAPID key contains invalid characters');
+        }
+        // Try to decode it to ensure it's valid base64
+        const padding = '='.repeat((4 - testKey.length % 4) % 4);
+        const base64 = (testKey + padding)
+          .replace(/-/g, '+')
+          .replace(/_/g, '/');
+        window.atob(base64); // This will throw if invalid
+      } catch (validationError: any) {
+        const errorMsg = validationError.message?.includes('atob') || validationError.message?.includes('decoded')
+          ? 'VAPID key is not a valid base64 string. Please check NEXT_PUBLIC_FIREBASE_VAPID_KEY in your Vercel environment variables.'
+          : `Invalid VAPID key format: ${validationError.message}`;
+        throw new Error(errorMsg);
+      }
+
       // Ensure service worker is fully activated (especially important on mobile)
       if (activeRegistration.active) {
         // Wait a bit more for mobile browsers
@@ -329,13 +356,21 @@ export const usePushNotifications = () => {
       while (!token && retries > 0) {
         try {
           token = await getToken(messaging, {
-            vapidKey: vapidKey,
+            vapidKey: vapidKey.trim(), // Ensure trimmed key is passed
             serviceWorkerRegistration: activeRegistration,
           });
           
           if (token) break;
         } catch (tokenError: any) {
           console.error(`Token fetch attempt ${4 - retries} failed:`, tokenError);
+          
+          // Check for VAPID key decoding errors
+          if (tokenError.message?.includes('atob') || 
+              tokenError.message?.includes('decoded') || 
+              tokenError.name === 'InvalidCharacterError' ||
+              tokenError.message?.includes('not correctly encoded')) {
+            throw new Error('Invalid VAPID key format. The NEXT_PUBLIC_FIREBASE_VAPID_KEY environment variable is not a valid base64 string. Please check your Vercel environment variables and ensure the key is correctly set.');
+          }
           
           if (retries === 1) {
             // Last attempt failed
@@ -420,8 +455,13 @@ export const usePushNotifications = () => {
       if (!tokenToRemove && messaging && 'Notification' in window && Notification.permission === 'granted') {
         try {
           const registration = await navigator.serviceWorker.ready;
+          const vapidKeyForUnsubscribe = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY?.trim() || '';
+          if (!vapidKeyForUnsubscribe) {
+            console.warn('VAPID key not available for unsubscribe');
+            return;
+          }
           tokenToRemove = await getToken(messaging, {
-            vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || '',
+            vapidKey: vapidKeyForUnsubscribe,
             serviceWorkerRegistration: registration,
           });
         } catch (error) {
