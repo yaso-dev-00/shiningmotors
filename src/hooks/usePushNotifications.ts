@@ -196,6 +196,19 @@ export const usePushNotifications = () => {
   const subscribeUser = async () => {
     try {
       if (!messaging) {
+        // Check if Firebase config is missing
+        const missingConfig = [];
+        if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY) missingConfig.push('NEXT_PUBLIC_FIREBASE_API_KEY');
+        if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) missingConfig.push('NEXT_PUBLIC_FIREBASE_PROJECT_ID');
+        if (!process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID) missingConfig.push('NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID');
+        if (!process.env.NEXT_PUBLIC_FIREBASE_APP_ID) missingConfig.push('NEXT_PUBLIC_FIREBASE_APP_ID');
+        
+        if (missingConfig.length > 0) {
+          throw new Error(
+            `Firebase messaging not initialized. Missing environment variables: ${missingConfig.join(', ')}. ` +
+            `Please check your Vercel environment variables configuration.`
+          );
+        }
         throw new Error('Firebase messaging not initialized. Please check Firebase configuration.');
       }
 
