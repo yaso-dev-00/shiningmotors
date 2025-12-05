@@ -355,6 +355,7 @@ export const usePushNotifications = () => {
       
       while (!token && retries > 0) {
         try {
+          console.log('getting token',vapidKey.trim());
           token = await getToken(messaging, {
             vapidKey: vapidKey.trim(), // Ensure trimmed key is passed
             serviceWorkerRegistration: activeRegistration,
