@@ -4,14 +4,14 @@ import { getMessaging, getToken, Messaging, onMessage } from 'firebase/messaging
 let messaging: Messaging | null = null;
 let app: FirebaseApp | undefined;
 
-// Firebase configuration
+// Firebase configuration - trim all values to remove whitespace/newlines
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "shining-motors-d75ce.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "shining-motors-d75ce",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "shining-motors-d75ce.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim(),
+  authDomain: (process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "shining-motors-d75ce.firebaseapp.com").trim(),
+  projectId: (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "shining-motors-d75ce").trim(),
+  storageBucket: (process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "shining-motors-d75ce.appspot.com").trim(),
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim(),
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim(),
 };
 
 // Validate Firebase configuration
@@ -20,8 +20,12 @@ const validateFirebaseConfig = () => {
   const missingFields: string[] = [];
   
   requiredFields.forEach(field => {
-    if (!firebaseConfig[field as keyof typeof firebaseConfig]) {
+    const value = firebaseConfig[field as keyof typeof firebaseConfig];
+    if (!value || (typeof value === 'string' && value.trim().length === 0)) {
       missingFields.push(field);
+    } else if (typeof value === 'string' && (value.includes('\n') || value.includes('\r'))) {
+      // Log warning if value contains newlines (should be trimmed, but log for debugging)
+      console.warn(`Firebase config field '${field}' contains newline characters. This may cause issues.`);
     }
   });
   
