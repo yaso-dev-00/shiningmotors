@@ -2,6 +2,7 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getMessaging, getToken, Messaging, onMessage } from 'firebase/messaging';
 
 let messaging: Messaging | null = null;
+let app: FirebaseApp | undefined;
 
 // Firebase configuration
 const firebaseConfig = {
@@ -13,17 +14,75 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-let app: FirebaseApp;
-if (typeof window !== 'undefined' && !getApps().length) {
-  app = initializeApp(firebaseConfig);
-  if ('serviceWorker' in navigator) {
-    messaging = getMessaging(app);
+// Validate Firebase configuration
+const validateFirebaseConfig = () => {
+  const requiredFields = ['apiKey', 'projectId', 'messagingSenderId', 'appId'];
+  const missingFields: string[] = [];
+  
+  requiredFields.forEach(field => {
+    if (!firebaseConfig[field as keyof typeof firebaseConfig]) {
+      missingFields.push(field);
+    }
+  });
+  
+  if (missingFields.length > 0) {
+    const envVarNames = {
+      apiKey: 'NEXT_PUBLIC_FIREBASE_API_KEY',
+      projectId: 'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
+      messagingSenderId: 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
+      appId: 'NEXT_PUBLIC_FIREBASE_APP_ID',
+    };
+    
+    const missingEnvVars = missingFields.map(f => envVarNames[f as keyof typeof envVarNames]).join(', ');
+    console.error(
+      `Firebase configuration is incomplete. Missing required fields: ${missingFields.join(', ')}. ` +
+      `Please set the following environment variables: ${missingEnvVars}`
+    );
+    return false;
   }
-} else if (typeof window !== 'undefined') {
-  app = getApps()[0];
-  if ('serviceWorker' in navigator) {
-    messaging = getMessaging(app);
+  
+  return true;
+};
+
+// Initialize Firebase
+if (typeof window !== 'undefined') {
+  try {
+    if (!getApps().length) {
+      // Validate config before initializing
+      if (!validateFirebaseConfig()) {
+        console.error('Firebase initialization skipped due to missing configuration');
+      } else {
+        app = initializeApp(firebaseConfig);
+        if ('serviceWorker' in navigator) {
+          try {
+            messaging = getMessaging(app);
+          } catch (messagingError: any) {
+            console.error('Failed to initialize Firebase Messaging:', messagingError);
+            messaging = null;
+          }
+        }
+      }
+    } else {
+      app = getApps()[0];
+      if ('serviceWorker' in navigator) {
+        try {
+          messaging = getMessaging(app);
+        } catch (messagingError: any) {
+          console.error('Failed to get Firebase Messaging:', messagingError);
+          messaging = null;
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error('Failed to initialize Firebase:', error);
+    if (error.message?.includes('INVALID_ARGUMENT') || error.message?.includes('invalid argument')) {
+      console.error(
+        'Firebase configuration error. Please verify all environment variables are set correctly: ' +
+        'NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_PROJECT_ID, ' +
+        'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, NEXT_PUBLIC_FIREBASE_APP_ID'
+      );
+    }
+    messaging = null;
   }
 }
 
