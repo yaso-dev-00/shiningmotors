@@ -46,3 +46,4 @@ foreach ($line in $envVars) {
 Write-Host "Done! All environment variables have been pushed to Vercel." -ForegroundColor Green
 Write-Host "Note: You may need to redeploy your project for changes to take effect." -ForegroundColor Yellow
 
+

@@ -1078,13 +1078,16 @@ const PostCard = ({
                 {media.map((item, idx) => (
                   <SwiperSlide key={idx} className="relative">
                     {item.type === "image" ? (
-                      <div className="relative w-full min-h-[200px] md:h-[400px]">
+                      <div className="relative w-full min-h-[200px] md:h-[400px] flex items-center justify-center">
                         <Image
                           src={item.url}
                           alt=""
-                          fill
-                          className="object-contain"
-                          sizes="(min-width: 768px) 80vw, 100vw"
+                         
+                          width={100}
+                          height={100}
+                        
+                          className="object-cover h-full w-full"
+                          // sizes="(min-width: 768px) 80vw, 100vw"
                         />
                       </div>
                     ) : (
@@ -1190,13 +1193,15 @@ const PostCard = ({
                 <div ref={paginationRef} className="swiper-pagination"></div>
               </Swiper>
             ) : media[0].type === "image" ? (
-              <div className="relative w-full min-h-[200px] md:h-[400px]">
+              <div className="relative w-full min-h-[200px] md:h-[400px] flex items-center justify-center">
                 <Image
                   src={media[0].url}
                   alt="Post content"
-                  fill
-                  className="object-contain"
-                  sizes="(min-width: 768px) 80vw, 100vw"
+                 
+                 width={100}
+                 height={100}
+                  className="object-cover h-full w-full"
+                  // sizes="(min-width: 768px) 80vw, 100vw"
                   onError={(e) => {
                     const el = e.currentTarget as unknown as HTMLImageElement;
                     if (el && el.style) el.style.display = "none";
