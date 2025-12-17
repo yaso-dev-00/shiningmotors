@@ -1,4 +1,4 @@
-
+'use client';
 import { useWishlist } from "@/hooks/useWishlist";
 import Layout from "@/components/Layout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { useEffect, useMemo } from "react";
+import { confirmToast } from "@/utils/confirmToast";
 
 interface ProductItem {
   id: string;
@@ -42,7 +43,29 @@ const Wishlist = () => {
   }, [wishlistItems]);
 
   const handleRemove = async (itemId: string, itemType: 'product' | 'vehicle') => {
-    await removeFromWishlist(itemId, itemType);
+    // Get item name for confirmation message
+    const item = wishlistItems.find(
+      (item) => String(item.item_id) === String(itemId) && item.item_type === itemType
+    );
+    const itemName = item?.item_type === 'product' 
+      ? (item.product as unknown as ProductItem)?.name 
+      : (item?.vehicle as unknown as VehicleItem)?.title;
+    const itemTypeLabel = itemType === 'product' ? 'product' : 'vehicle';
+
+    confirmToast({
+      title: "Remove from wishlist?",
+      description: itemName 
+        ? `Are you sure you want to remove "${itemName}" from your wishlist?`
+        : `Are you sure you want to remove this ${itemTypeLabel} from your wishlist?`,
+      confirmText: "Remove",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        await removeFromWishlist(itemId, itemType);
+      },
+      onCancel: () => {
+        // User cancelled, do nothing
+      },
+    });
   };
 
   const handleViewItem = (itemId: string, itemType: 'product' | 'vehicle') => {
@@ -150,7 +173,7 @@ const Wishlist = () => {
                   {item.item_type === 'product' && item.product ? (
                     <>
                       <h3 className="font-semibold line-clamp-1 mb-1">{(item.product as unknown as ProductItem).name}</h3>
-                      <p className="text-sm text-gray-600 line-clamp-2 mb-2">
+                      <p className="text-sm text-gray-600 line-clamp-1 mb-2">
                         {(item.product as unknown as ProductItem).description || ''}
                       </p>
                       <div className="flex items-center justify-between">
@@ -161,7 +184,7 @@ const Wishlist = () => {
                   ) : item.item_type === 'vehicle' && item.vehicle ? (
                     <>
                       <h3 className="font-semibold line-clamp-1 mb-1">{(item.vehicle as unknown as VehicleItem).title}</h3>
-                      <p className="text-sm text-gray-600 line-clamp-2 mb-2">
+                      <p className="text-sm text-gray-600 line-clamp-1 mb-2">
                         {(item.vehicle as unknown as VehicleItem).description || ''}
                       </p>
                       <div className="flex items-center justify-between">

@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { format } from "date-fns";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import Layout from "@/components/Layout";
-import { toast } from "sonner";
+import { toast as sonnerToast } from "sonner";
+import { confirmToast } from "@/utils/confirmToast";
+import { serviceBookingsApi, type ServiceBooking } from "@/integrations/supabase/modules/serviceBookings";
 
 import {
 
@@ -30,38 +31,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Clock, Calendar, MapPin, User, Tag, MessageSquare, Check, X } from "lucide-react";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-interface ServiceBooking {
-  id: number;
-  service_id: string | null;
-  vendor_id: string | null;
-  user_id: string | null;
-  created_at: string;
-  updated_at: string | null;
-  notes: string | null;
-  booking_slot: string | null;
-  booking_date: string | null;
-  status: string | null;
-  service?: {
-    title: string | null;
-    price: string | null;
-    description: string | null;
-    category: string | null;
-    media_urls: string[] | null;
-    location: string | null;
-  };
-  vendor?: {
-    username: string | null;
-    full_name: string | null;
-    avatar_url: string | null;
-  };
-}
 
 const ServiceBookings = () => {
   const { user } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"upcoming" | "past" | "all" |"cancelled">("all");
 
   // Fetch service bookings for the logged-in user
@@ -70,29 +48,53 @@ const ServiceBookings = () => {
     queryFn: async () => {
       if (!user?.id) return [];
 
-      const { data, error } = await supabase
-        .from("service_bookings")
-        .select(`
-          *,
-          service:services(*),
-          vendor:profiles!service_bookings_vendor_id_fkey(username, full_name, avatar_url)
-        `)
-        .eq("user_id", user.id);
+      const { data, error } = await serviceBookingsApi.getByUserId(user.id);
 
       if (error) {
         console.error("Error fetching service bookings:", error);
         toast({
           title: "Error fetching bookings",
-          description: error.message,
+          description: error,
           variant: "destructive",
         });
         return [];
       }
 
-      return (data || []) as unknown as ServiceBooking[];
+      return (data || []) as ServiceBooking[];
     },
     enabled: !!user?.id,
+    staleTime: 0, // Always consider data stale
+    gcTime: 0, // Don't cache data
+    refetchOnMount: true, // Always refetch on mount
+    refetchOnWindowFocus: true, // Refetch when window gains focus
   });
+
+  // Force refetch when navigating to this page or when component mounts
+  useEffect(() => {
+    if (pathname === '/myServiceBookings' && user?.id) {
+      // Invalidate query cache to ensure fresh data
+      queryClient.invalidateQueries({ queryKey: ["serviceBookings", user.id] });
+      // Refetch immediately
+      refetch();
+    }
+  }, [pathname, user?.id, queryClient, refetch]);
+
+  // Also refetch when window becomes visible (user returns to tab)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden && pathname === '/myServiceBookings') {
+        queryClient.invalidateQueries({ queryKey: ["serviceBookings", user.id] });
+        refetch();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.id, pathname, queryClient, refetch]);
 
   const statusColorMap: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-800 border-yellow-300",
@@ -161,26 +163,34 @@ const ServiceBookings = () => {
   };
 
   const handleCancelBooking = async (bookingId: number) => {
+      if (!user?.id) {
+      sonnerToast.error("Authentication required", {
+        description: "Please log in to cancel bookings",
+      });
+      return;
+    }
+
     try {
-      const { error } = await supabase
-        .from("service_bookings")
-        .update({ status: "cancelled" })
-        .eq("id", bookingId);
+      // Update status to cancelled via route handler
+      const { error } = await serviceBookingsApi.updateStatus(bookingId, user.id, "cancelled");
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error cancelling booking:", error);
+        throw new Error(error);
+      }
 
-      toast({
-        title: "Booking cancelled",
+      sonnerToast.success("Booking cancelled", {
         description: "Your service booking has been cancelled successfully.",
       });
       
-      refetch();
+      // Invalidate and refetch to ensure UI updates immediately
+      await queryClient.invalidateQueries({ queryKey: ["serviceBookings", user.id] });
+      await refetch();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to cancel booking";
-      toast({
-        title: "Error cancelling booking",
+      console.error("Error cancelling booking:", error);
+      sonnerToast.error("Error cancelling booking", {
         description: errorMessage,
-        variant: "destructive",
       });
     }
   };
@@ -199,7 +209,7 @@ const ServiceBookings = () => {
       title: "Are you sure to cancel the service?",
       description: "This action cannot be undone.",
       confirmText: "Confirm",
-      cancelText: "Keep",
+      cancelText: "Cancel",
       onConfirm: () => {
           handleCancelBooking(bookingId)
       }
@@ -478,62 +488,3 @@ const TabButton = ({
 };
 
 export default ServiceBookings;
-
-
-
-type ConfirmToastOptions = {
-  title: string;
-  description?: string;
-  confirmText?: string;
-  cancelText?: string;
-  onConfirm: () => void;
-  onCancel?: () => void;
-  duration?: number;
-  id?:string
-};
-
-export const confirmToast = ({
-  id = "confirm-toast",
-  title,
-  description,
-  confirmText = "Confirm",
-  cancelText = "Cancel",
-  onConfirm,
-  onCancel,
-  duration = Infinity,
-}: ConfirmToastOptions) => {
-     toast.dismiss(id);
-       (toast as any)((t: any) => (
-    
-    <div className="w-full">
-      <h3 className="font-medium text-sm">{title}</h3>
-      {description && <p className="text-sm mt-1 text-gray-400">{description}</p>}
-      <div className="flex gap-2 justify-start mt-4">
-        <button
-          onClick={() => {
-            onCancel?.();
-            toast.dismiss(t);
-          }}
-          className="px-3 py-1 rounded-md bg-racing-gray hover:bg-racing-gray/80   text-xs flex items-center gap-1"
-        >
-          <X className="h-3 w-3" />
-          {cancelText}
-        </button>
-        <button
-          onClick={() => {
-            onConfirm();
-            toast.dismiss(t);
-          }}
-          className="px-3 py-1 rounded-md  hover:bg-racing-red/80 text-white bg-red-700 text-xs flex items-center gap-1"
-        >
-          <Check className="h-3 w-3" />
-          {confirmText}
-        </button>
-      </div>
-    </div>
-          
-  ), {
-    duration,
-    id
-  });
-};

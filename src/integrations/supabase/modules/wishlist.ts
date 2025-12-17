@@ -1,5 +1,4 @@
-
-import { supabase } from '../client';
+"use client";
 import type { Database } from '../types';
 
 type WishlistItem = Database['public']['Tables']['wishlist']['Row'];
@@ -10,87 +9,90 @@ export interface WishlistItemWithDetails extends WishlistItem {
   vehicle?: Record<string, unknown>;
 }
 
+// Helper function to make API calls with cache-busting
+const apiCall = async (url: string, options?: RequestInit) => {
+  // Add cache-busting timestamp to ensure fresh data
+  const timestamp = Date.now();
+  const separator = url.includes('?') ? '&' : '?';
+  const urlWithCacheBust = `${url}${separator}_t=${timestamp}`;
+  
+  const response = await fetch(urlWithCacheBust, {
+    ...options,
+    cache: 'no-store', // Force no caching
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    return { data: null, error: error.error || `HTTP ${response.status}` };
+  }
+
+  const data = await response.json();
+  return { data, error: null };
+};
+
 export const wishlistApi = {
   // Get all wishlist items for a user
-  getByUserId: (userId: string) => 
-    supabase
-      .from('wishlist')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false }),
+  getByUserId: async (userId: string) => {
+    const response = await apiCall(`/api/wishlist/${userId}`);
+    if (response.error) {
+      return { data: null, error: response.error };
+    }
+    return { data: response.data?.data || [], error: null };
+  },
 
   // Add item to wishlist
-  addItem: (values: WishlistInsert) => 
-    supabase.from('wishlist').insert(values),
+  addItem: async (values: WishlistInsert) => {
+    const response = await apiCall('/api/wishlist', {
+      method: 'POST',
+      body: JSON.stringify(values),
+    });
+    if (response.error) {
+      return { data: null, error: response.error };
+    }
+    return { data: response.data?.data || null, error: null };
+  },
 
   // Remove item from wishlist
-  removeItem: (userId: string, itemId: string, itemType: 'product' | 'vehicle') => 
-    supabase
-      .from('wishlist')
-      .delete()
-      .eq('user_id', userId)
-      .eq('item_id', itemId)
-      .eq('item_type', itemType),
+  removeItem: async (userId: string, itemId: string, itemType: 'product' | 'vehicle') => {
+    const params = new URLSearchParams({
+      userId,
+      itemId,
+      itemType,
+    });
+    const response = await apiCall(`/api/wishlist?${params.toString()}`, {
+      method: 'DELETE',
+    });
+    if (response.error) {
+      return { error: response.error };
+    }
+    return { error: null };
+  },
 
   // Check if item is in wishlist
   isInWishlist: async (userId: string, itemId: string, itemType: 'product' | 'vehicle') => {
-    const { data, error } = await supabase
-      .from('wishlist')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('item_id', itemId)
-      .eq('item_type', itemType)
-      .single();
-    
-    return { exists: !!data && !error, error };
+    const response = await apiCall(`/api/wishlist/${userId}`);
+    if (response.error) {
+      return { exists: false, error: response.error };
+    }
+    const items = response.data?.data || [];
+    const exists = items.some(
+      (item: WishlistItemWithDetails) =>
+        String(item.item_id) === String(itemId) && item.item_type === itemType
+    );
+    return { exists, error: null };
   },
 
   // Get wishlist items with product/vehicle details
   getWithDetails: async (userId: string) => {
-    const { data: wishlistItems, error } = await supabase
-      .from('wishlist')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (error || !wishlistItems) return { data: [], error };
-
-    // Separate products and vehicles
-    const productIds = wishlistItems.filter(item => item.item_type === 'product').map(item => item.item_id);
-    const vehicleIds = wishlistItems.filter(item => item.item_type === 'vehicle').map(item => item.item_id);
-
-    // Fetch product details
-    let products: Record<string, unknown>[] = [];
-    if (productIds.length > 0) {
-      const { data: productData } = await supabase
-        .from('products')
-        .select('*')
-        .in('id', productIds);
-      products = productData || [];
+    const response = await apiCall(`/api/wishlist/${userId}`);
+    if (response.error) {
+      return { data: [], error: response.error };
     }
-
-    // Fetch vehicle details
-    let vehicles: Record<string, unknown>[] = [];
-    if (vehicleIds.length > 0) {
-      const { data: vehicleData } = await supabase
-        .from('vehicles')
-        .select('*')
-        .in('id', vehicleIds);
-      vehicles = vehicleData || [];
-    }
-
-    // Combine wishlist items with their details
-    const itemsWithDetails = wishlistItems.map(item => {
-      if (item.item_type === 'product') {
-        const product = products.find(p => p.id === item.item_id);
-        return { ...item, product };
-      } else {
-        const vehicle = vehicles.find(v => v.id === item.item_id);
-        return { ...item, vehicle };
-      }
-    });
-
-    return { data: itemsWithDetails, error: null };
+    return { data: response.data?.data || [], error: null };
   }
 };
 

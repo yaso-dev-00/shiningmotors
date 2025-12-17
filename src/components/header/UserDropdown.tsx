@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import NProgress from "nprogress";
+import { RouteRemember } from "../RouteRemember";
 
 export const UserDropdown = () => {
   const router = useRouter();
@@ -26,7 +27,10 @@ export const UserDropdown = () => {
     // Only show progress bar and navigate if it's a different path
     if (pathname !== path) {
       NProgress.start();
+      router.refresh();
+       
       router.push(path as any);
+     
     }
   };
 

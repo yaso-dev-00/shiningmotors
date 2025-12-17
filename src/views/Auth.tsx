@@ -36,6 +36,7 @@ import {
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { getRedirectFromUrlOrStorage, clearRedirectPath } from "@/lib/utils/routeRemember";
+import supabase from "@/integrations/supabase/client";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -44,7 +45,7 @@ const Auth = () => {
   const { signIn, signUp, signInWithGoogle, isAuthenticated } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-
+   
   const loginForm = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -52,7 +53,10 @@ const Auth = () => {
       password: "",
     },
   });
-
+  const fetchSession=async()=>{
+    const session=await supabase.auth.getSession();
+    return session;
+  }
   const registerForm = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -66,8 +70,10 @@ const Auth = () => {
     setIsLoading(true);
     const result = await signIn(data.email, data.password);
     setIsLoading(false);
-    
+    const session=await fetchSession()
+    document.cookie=`access_token=${session.data.session?.access_token}`;
     // Redirect will be handled by useEffect when isAuthenticated changes
+  
     if (result?.error) {
       // Error is already handled by AuthContext toast
       return;

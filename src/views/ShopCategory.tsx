@@ -86,13 +86,36 @@ const ShopCategory = () => {
   }, [category, sortOption, selectedStatus, minPrice, maxPrice, currentPage, debouncedSearchTerm, parts, selectedSubcategory, selectedFilters]);
 
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (overrideFilters?: {
+    status?: string;
+    sortOption?: string;
+    minPrice?: string;
+    maxPrice?: string;
+    page?: number;
+    search?: string;
+    parts?: string;
+    selectedSubcategory?: string | null;
+    selectedFilters?: Record<string, string[]>;
+  }) => {
     setLoading(true);
     try {
+      // Use override filters if provided, otherwise use state
+      const filters = overrideFilters || {
+        status: selectedStatus,
+        sortOption: sortOption,
+        minPrice: minPrice,
+        maxPrice: maxPrice,
+        page: currentPage,
+        search: debouncedSearchTerm,
+        parts: parts,
+        selectedSubcategory: selectedSubcategory,
+        selectedFilters: selectedFilters
+      };
+      
       if (category) {
         let filteredProducts = [];
         
-        if (Object.keys(selectedFilters).length > 0) {
+        if (Object.keys(filters.selectedFilters || {}).length > 0) {
           // Use Filters table for efficient filtering
           const { data: filterData, error: filterError } = await supabase
             .from("Filters")
@@ -105,15 +128,15 @@ const ShopCategory = () => {
             // Fallback to regular API
             const { data, count, error } = await shopApi.products.getFiltered({
               category,
-              status: selectedStatus === "all" ? undefined : selectedStatus as "on_sale" | "upcoming" | "in_stock",
-              sortBy: sortOption as "price_asc" | "price_desc" | "newest" | "updated",
-              page: currentPage,
+              status: filters.status === "all" ? undefined : filters.status as "on_sale" | "upcoming" | "in_stock",
+              sortBy: (filters.sortOption || "newest") as "price_asc" | "price_desc" | "newest" | "updated",
+              page: filters.page || 1,
               pageSize: PAGE_SIZE,
-              minPrice: minPrice ? Number(minPrice) : undefined,
-              maxPrice: maxPrice ? Number(maxPrice) : undefined,
-              search: debouncedSearchTerm,
-              parts,
-              subCategory: selectedSubcategory || undefined,
+              minPrice: filters.minPrice ? Number(filters.minPrice) : undefined,
+              maxPrice: filters.maxPrice ? Number(filters.maxPrice) : undefined,
+              search: filters.search || "",
+              parts: filters.parts || "",
+              subCategory: filters.selectedSubcategory || undefined,
             });
             
             if (error) throw error;
@@ -130,7 +153,7 @@ const ShopCategory = () => {
             // For each selected filter category, get product IDs
             const filterProductIds: string[][] = [];
             
-            Object.entries(selectedFilters).forEach(([filterCategory, selectedValues]: [string, string[]]) => {
+            Object.entries(filters.selectedFilters || {}).forEach(([filterCategory, selectedValues]: [string, string[]]) => {
               const categoryProductIds: string[] = [];
               selectedValues.forEach((option: string) => {
                 if (productIds[filterCategory]?.[option]) {
@@ -163,20 +186,20 @@ const ShopCategory = () => {
             // Apply additional filters (status, price, search, etc.)
             let finalProducts = filteredProducts || [];
             
-            if (selectedStatus !== "all") {
-              finalProducts = finalProducts.filter((p: Product) => p.status === selectedStatus);
+            if (filters.status !== "all") {
+              finalProducts = finalProducts.filter((p: Product) => p.status === filters.status);
             }
             
-            if (minPrice) {
-              finalProducts = finalProducts.filter((p: Product) => p.price >= Number(minPrice));
+            if (filters.minPrice) {
+              finalProducts = finalProducts.filter((p: Product) => p.price >= Number(filters.minPrice));
             }
             
-            if (maxPrice) {
-              finalProducts = finalProducts.filter((p: Product) => p.price <= Number(maxPrice));
+            if (filters.maxPrice) {
+              finalProducts = finalProducts.filter((p: Product) => p.price <= Number(filters.maxPrice));
             }
             
-            if (debouncedSearchTerm) {
-              const searchLower = debouncedSearchTerm.toLowerCase();
+            if (filters.search) {
+              const searchLower = filters.search.toLowerCase();
               finalProducts = finalProducts.filter((p: Product) => 
                 p.name.toLowerCase().includes(searchLower) ||
                 p.category.toLowerCase().includes(searchLower) ||
@@ -185,25 +208,25 @@ const ShopCategory = () => {
               );
             }
             
-            if (parts) {
-              finalProducts = finalProducts.filter((p: Product) => p.parts === parts);
+            if (filters.parts) {
+              finalProducts = finalProducts.filter((p: Product) => p.parts === filters.parts);
             }
             
-            if (selectedSubcategory) {
-              finalProducts = finalProducts.filter((p: Product) => p.subCategory === selectedSubcategory);
+            if (filters.selectedSubcategory) {
+              finalProducts = finalProducts.filter((p: Product) => p.subCategory === filters.selectedSubcategory);
             }
 
             // Apply sorting
-            if (sortOption === 'price_asc') {
+            if (filters.sortOption === 'price_asc') {
               finalProducts.sort((a: Product, b: Product) => a.price - b.price);
-            } else if (sortOption === 'price_desc') {
+            } else if (filters.sortOption === 'price_desc') {
               finalProducts.sort((a: Product, b: Product) => b.price - a.price);
-            } else if (sortOption === 'newest') {
+            } else if (filters.sortOption === 'newest') {
               finalProducts.sort((a: Product, b: Product) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
             }
 
             // Apply pagination
-            const start = (currentPage - 1) * PAGE_SIZE;
+            const start = ((filters.page || 1) - 1) * PAGE_SIZE;
             const end = start + PAGE_SIZE;
             const paginatedProducts = finalProducts.slice(start, end);
 
@@ -217,15 +240,15 @@ const ShopCategory = () => {
           // No filters selected, use regular API
           const { data, count, error } = await shopApi.products.getFiltered({
             category,
-            status: selectedStatus === "all" ? undefined : selectedStatus as "on_sale" | "upcoming" | "in_stock",
-            sortBy: sortOption as "price_asc" | "price_desc" | "newest" | "updated",
-            page: currentPage,
+            status: filters.status === "all" ? undefined : filters.status as "on_sale" | "upcoming" | "in_stock",
+            sortBy: (filters.sortOption || "newest") as "price_asc" | "price_desc" | "newest" | "updated",
+            page: filters.page || 1,
             pageSize: PAGE_SIZE,
-            minPrice: minPrice ? Number(minPrice) : undefined,
-            maxPrice: maxPrice ? Number(maxPrice) : undefined,
-            search: debouncedSearchTerm,
-            parts,
-            subCategory: selectedSubcategory || undefined,
+            minPrice: filters.minPrice ? Number(filters.minPrice) : undefined,
+            maxPrice: filters.maxPrice ? Number(filters.maxPrice) : undefined,
+            search: filters.search || "",
+            parts: filters.parts || "",
+            subCategory: filters.selectedSubcategory || undefined,
           });
           
           if (error) throw error;
@@ -261,12 +284,29 @@ const ShopCategory = () => {
   };
 
   const resetAllFilters = () => {
+    // Reset all state
     setSelectedStatus('all');
     setSortOption('newest');
     setMinPrice('');
     setMaxPrice('');
     setSelectedFilters({});
     setCurrentPage(1);
+    setSearchTerm(''); // Also reset search term
+    setParts(''); // Reset parts filter
+    setSelected(null); // Reset subcategory
+    
+    // Force immediate fetch with reset values (bypass state, use direct values)
+    fetchProducts({
+      status: 'all',
+      sortOption: 'newest',
+      minPrice: '',
+      maxPrice: '',
+      page: 1,
+      search: '',
+      parts: '',
+      selectedSubcategory: null,
+      selectedFilters: {}
+    });
   };
 
   const handleSubCategory = (text: string) => {
@@ -433,7 +473,10 @@ const ShopCategory = () => {
                 {/* <Button variant="outline" size="sm" className="flex items-center lg:hidden">
                   <Filter size={16} className="mr-2" /> Filter
                 </Button> */}
-                <Select value={sortOption} onValueChange={setSortOption}>
+                <Select value={sortOption} onValueChange={(value) => {
+                  setSortOption(value);
+                  setCurrentPage(1); // Reset to first page when sorting changes
+                }}>
                   <SelectTrigger className="w-[180px]">
                     <SortDesc size={16} className="mr-2" />
                     <SelectValue placeholder="Sort By" />

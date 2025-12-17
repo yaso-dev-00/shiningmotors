@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Cropper from 'react-easy-crop';
 
 interface VideoCropperProps {
   videoFile: File;
   videoUrl: string;
   aspect?: number;
+  rotation?: number;
   onCropChange?: (cropData: {
     cropX: number;
     cropY: number;
@@ -13,10 +14,17 @@ interface VideoCropperProps {
   }) => void;
 }
 
-const VideoCropper: React.FC<VideoCropperProps> = ({ videoFile, videoUrl, aspect = 1, onCropChange }) => {
+const VideoCropper: React.FC<VideoCropperProps> = ({ videoFile, videoUrl, aspect = 1, rotation = 0, onCropChange }) => {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  
+  // Reset crop position when rotation changes
+  useEffect(() => {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
+  }, [rotation]);
 
   const isImage = videoFile.type.startsWith('image/');
 
@@ -45,6 +53,7 @@ const VideoCropper: React.FC<VideoCropperProps> = ({ videoFile, videoUrl, aspect
           crop={crop}
           zoom={zoom}
           aspect={aspect}
+          rotation={isImage ? rotation : 0}
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onCropComplete={handleCropComplete}

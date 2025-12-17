@@ -94,25 +94,36 @@ const Shop = ({ initialProducts = [], initialTotalCount = 0 }: ShopProps) => {
     setIsInitial(false)
   },[currentPage])
   useEffect(() => {
-    // Only fetch if filters are applied (not using initial data)
-    if (selectedCategory || selectedStatus !== 'all' || minPrice || maxPrice || debouncedSearchTerm || currentPage > 1) {
+    // Always fetch when any filter changes, including sortBy
+    // Skip initial render if no filters are applied (use initial data)
+    const hasFilters = selectedCategory || selectedStatus !== 'all' || minPrice || maxPrice || debouncedSearchTerm || currentPage > 1 || sortBy !== 'newest';
+    
+    if (hasFilters) {
       fetchProducts();
     }
     // eslint-disable-next-line
   }, [selectedCategory, selectedStatus, sortBy, minPrice, maxPrice, currentPage, debouncedSearchTerm]);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (overrideParams?: {
+    category?: string;
+    status?: string;
+    sortBy?: string;
+    minPrice?: string;
+    maxPrice?: string;
+    page?: number;
+    search?: string;
+  }) => {
     try {
       setLoading(true);
       const { data, count, error } = await shopApi.products.getFiltered({
-        category: selectedCategory || undefined,
-        status: selectedStatus === 'all' ? undefined : selectedStatus as any,
-        sortBy: sortBy as any,
-        minPrice: minPrice ? Number(minPrice) : undefined,
-        maxPrice: maxPrice ? Number(maxPrice) : undefined,
-        page: currentPage,
+        category: (overrideParams?.category ?? selectedCategory) || undefined,
+        status: (overrideParams?.status ?? selectedStatus) === 'all' ? undefined : (overrideParams?.status ?? selectedStatus) as any,
+        sortBy: (overrideParams?.sortBy ?? sortBy) as any,
+        minPrice: (overrideParams?.minPrice ?? minPrice) ? Number(overrideParams?.minPrice ?? minPrice) : undefined,
+        maxPrice: (overrideParams?.maxPrice ?? maxPrice) ? Number(overrideParams?.maxPrice ?? maxPrice) : undefined,
+        page: overrideParams?.page ?? currentPage,
         pageSize: PAGE_SIZE,
-        search:debouncedSearchTerm
+        search: overrideParams?.search ?? debouncedSearchTerm
       });
 
       if (error) throw error;
@@ -143,15 +154,31 @@ const Shop = ({ initialProducts = [], initialTotalCount = 0 }: ShopProps) => {
     fetchProducts();
   };
 
-  const handleSortChange = (sort: string) => setSortBy(sort);
+  const handleSortChange = (sort: string) => {
+    setSortBy(sort);
+    setCurrentPage(1); // Reset to first page when sorting changes
+  };
 
   const resetFilters = () => {
+    // Reset all filters
     setMinPrice('');
     setMaxPrice('');
     setSelectedStatus('all');
     setCurrentPage(1);
     setSortBy('newest');
     setSelectedCategory('');
+    setSearchTerm(''); // Also reset search term
+    
+    // Force immediate fetch with reset values (bypass state, use direct values)
+    fetchProducts({
+      category: '',
+      status: 'all',
+      sortBy: 'newest',
+      minPrice: '',
+      maxPrice: '',
+      page: 1,
+      search: ''
+    });
   };
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);

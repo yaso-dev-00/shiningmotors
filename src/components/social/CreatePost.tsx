@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ArrowLeft,
   Trash,
+  RotateCw,
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import Cropper from "react-easy-crop";
@@ -91,9 +92,63 @@ const CreatePost = ({
   const [imageAspectRatio, setImageAspectRatio] = useState<
     "1:1" | "4:5" | "9:16"
   >("1:1");
+  // Add state for image rotation (in degrees, per image index)
+  const [imageRotations, setImageRotations] = useState<{ [index: number]: number }>({});
 
   const onCropComplete = (croppedArea: any, croppedPixels: any) => {
     setCroppedAreaPixels(croppedPixels);
+  };
+
+  // Function to rotate an image file
+  const rotateImageFile = async (file: File, rotation: number): Promise<File> => {
+    if (rotation === 0 || !file.type.startsWith("image/")) {
+      return file;
+    }
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        reject(new Error("Could not get canvas context"));
+        return;
+      }
+
+      img.onload = () => {
+        // Swap width and height for 90/270 degree rotations
+        if (rotation === 90 || rotation === 270) {
+          canvas.width = img.height;
+          canvas.height = img.width;
+        } else {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const rotatedFile = new File([blob], file.name, {
+                type: file.type,
+                lastModified: Date.now(),
+              });
+              resolve(rotatedFile);
+            } else {
+              reject(new Error("Failed to create rotated image"));
+            }
+          },
+          file.type,
+          0.95
+        );
+      };
+
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = URL.createObjectURL(file);
+    });
   };
 
   useEffect(() => {
@@ -148,29 +203,92 @@ const CreatePost = ({
     setVideoCropParams({});
   };
 
-  const getCroppedImg = (imageSrc: string, crop: any): Promise<Blob> => {
+  const getCroppedImg = (imageSrc: string, crop: any, rotation: number = 0): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const image = new window.Image();
       image.src = imageSrc;
       image.crossOrigin = "anonymous";
       image.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Could not get canvas context"));
+          return;
+        }
+
+        // react-easy-crop provides crop coordinates relative to the displayed (rotated) image
+        // We need to transform these coordinates to the original image space
         const scaleX = image.naturalWidth / image.width;
         const scaleY = image.naturalHeight / image.height;
-        const canvas = document.createElement("canvas");
+
+        // Set canvas size to crop dimensions
         canvas.width = crop.cropWidth;
         canvas.height = crop.cropHeight;
-        const ctx = canvas.getContext("2d");
-        ctx?.drawImage(
-          image,
-          crop.cropX * scaleX,
-          crop.cropY * scaleY,
-          crop.cropWidth * scaleX,
-          crop.cropHeight * scaleY,
-          0,
-          0,
-          crop.cropWidth,
-          crop.cropHeight
-        );
+
+        // For rotation, we need to transform coordinates
+        // The crop coordinates from react-easy-crop are already in the rotated space
+        // So we can use them directly, but we need to account for rotation when drawing
+        
+        if (rotation === 0) {
+          // No rotation - simple crop
+          ctx.drawImage(
+            image,
+            crop.cropX * scaleX,
+            crop.cropY * scaleY,
+            crop.cropWidth * scaleX,
+            crop.cropHeight * scaleY,
+            0,
+            0,
+            crop.cropWidth,
+            crop.cropHeight
+          );
+        } else {
+          // For rotated images, we need to:
+          // 1. Rotate the entire image first
+          // 2. Then crop from the rotated image
+          
+          // Create a temporary canvas for the rotated image
+          const tempCanvas = document.createElement("canvas");
+          const tempCtx = tempCanvas.getContext("2d");
+          if (!tempCtx) {
+            reject(new Error("Could not get temp canvas context"));
+            return;
+          }
+
+          // Calculate dimensions after rotation
+          let rotatedWidth = image.naturalWidth;
+          let rotatedHeight = image.naturalHeight;
+          
+          if (rotation === 90 || rotation === 270) {
+            rotatedWidth = image.naturalHeight;
+            rotatedHeight = image.naturalWidth;
+          }
+
+          tempCanvas.width = rotatedWidth;
+          tempCanvas.height = rotatedHeight;
+
+          // Draw and rotate the image
+          tempCtx.save();
+          tempCtx.translate(rotatedWidth / 2, rotatedHeight / 2);
+          tempCtx.rotate((rotation * Math.PI) / 180);
+          tempCtx.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+          tempCtx.restore();
+
+          // Now crop from the rotated image
+          // The crop coordinates are relative to the rotated display, so we can use them directly
+          ctx.drawImage(
+            tempCanvas,
+            crop.cropX * scaleX,
+            crop.cropY * scaleY,
+            crop.cropWidth * scaleX,
+            crop.cropHeight * scaleY,
+            0,
+            0,
+            crop.cropWidth,
+            crop.cropHeight
+          );
+        }
+
         canvas.toBlob((blob) => {
           if (blob) resolve(blob);
           else reject(new Error("Canvas is empty"));
@@ -377,6 +495,7 @@ const CreatePost = ({
     setPostAspect(null); // Reset post aspect ratio
     setVideoAspectRatio("1:1"); // Reset video aspect ratio
     setImageAspectRatio("1:1"); // Reset image aspect ratio
+    setImageRotations({}); // Reset image rotations
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (onClose) onClose();
   };
@@ -433,28 +552,94 @@ const CreatePost = ({
         images.map(async (file, idx) => {
           // If this is a video with crop params, call backend crop API
           if (videoCropParams[idx] && file.type.startsWith("video/")) {
+            // For large videos, upload to Supabase first to avoid Vercel request size limits
+            const fileSizeMB = file.size / (1024 * 1024);
+            const useDirectUpload = fileSizeMB < 3; // Use direct upload for files < 3MB
+            
+            let videoUrl: string | null = null;
+            
+            if (!useDirectUpload) {
+              // Upload to Supabase storage first for large files
+              const fileExt = file.name.split(".").pop();
+              const tempFileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+              const tempFilePath = `${user.id}/temp/${tempFileName}`;
+              
+              const { error: uploadError, data: uploadData } = await supabase.storage
+                .from("posts")
+                .upload(tempFilePath, file, {
+                  contentType: file.type,
+                  upsert: false,
+                });
+              
+              if (uploadError) {
+                throw new Error(`Failed to upload video: ${uploadError.message}`);
+              }
+              
+              const { data: publicUrlData } = supabase.storage
+                .from("posts")
+                .getPublicUrl(tempFilePath);
+              
+              videoUrl = publicUrlData.publicUrl;
+              console.log("[CreatePost] Uploaded large video to Supabase:", videoUrl);
+            }
+            
             const formData = new FormData();
-            formData.append("video", file);
+            if (useDirectUpload) {
+              formData.append("video", file);
+            } else if (videoUrl) {
+              formData.append("videoUrl", videoUrl);
+            }
             formData.append("cropX", videoCropParams[idx].cropX);
             formData.append("cropY", videoCropParams[idx].cropY);
             formData.append("cropWidth", videoCropParams[idx].cropWidth);
             formData.append("cropHeight", videoCropParams[idx].cropHeight);
             formData.append("userId", user.id);
+            
             const response = await fetch("/api/crop", {
               method: "POST",
               body: formData,
             });
-            if (!response.ok)
+            
+            if (!response.ok) {
+              // Clean up temp file if it was uploaded
+              if (videoUrl) {
+                try {
+                  const filePath = videoUrl.split("/posts/")[1];
+                  if (filePath) {
+                    await supabase.storage.from("posts").remove([filePath]);
+                  }
+                } catch {
+                  // Ignore cleanup errors
+                }
+              }
+              const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
               throw new Error(
-                "Failed to crop video ,Post a video that has less than 2MB"
+                errorData.error || "Failed to crop video. Please try a smaller video or check your connection."
               );
+            }
+            
             const croppedVideoUrl = await response.json();
+            
+            // Clean up temp file after successful crop
+            if (videoUrl) {
+              try {
+                const filePath = videoUrl.split("/posts/")[1];
+                if (filePath) {
+                  await supabase.storage.from("posts").remove([filePath]);
+                }
+              } catch {
+                // Ignore cleanup errors
+              }
+            }
+            
             return croppedVideoUrl.url;
           } else if (videoCropParams[idx] && file.type.startsWith("image/")) {
-            // For images, crop in browser using stored crop params, then upload
+            // For images, crop in browser using stored crop params with rotation
+            // getCroppedImg now handles rotation internally
             const croppedBlob = await getCroppedImg(
               imageUrls[idx],
-              videoCropParams[idx]
+              videoCropParams[idx],
+              imageRotations[idx] || 0
             );
             const croppedFile = new File([croppedBlob], file.name, {
               type: file.type,
@@ -474,8 +659,13 @@ const CreatePost = ({
               .getPublicUrl(filePath);
             return publicURL.publicUrl;
           } else {
-            // For images or videos without crop params, upload as before
-            const fileExt = file.name.split(".").pop();
+            // For images or videos without crop params, apply rotation if needed then upload
+            let fileToUpload = file;
+            // Apply rotation to images if rotation is set
+            if (file.type.startsWith("image/") && imageRotations[idx]) {
+              fileToUpload = await rotateImageFile(file, imageRotations[idx]);
+            }
+            const fileExt = fileToUpload.name.split(".").pop();
             const fileName = `${Math.random()
               .toString(36)
               .substring(2)}-${Date.now()}.${fileExt}`;
@@ -483,7 +673,7 @@ const CreatePost = ({
             const filePath = `${userId}/${fileName}`;
             const { error: uploadError } = await supabase.storage
               .from("posts")
-              .upload(filePath, file);
+              .upload(filePath, fileToUpload);
             if (uploadError) throw uploadError;
             const { data: publicURL } = supabase.storage
               .from("posts")
@@ -607,7 +797,26 @@ const CreatePost = ({
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <div className="sticky top-0 z-10 bg-gray-200 rounded-t-2xl flex items-center justify-end px-4 py-3 border-b gap-2">
+        <div className="sticky top-0 z-10 bg-gray-200 rounded-t-2xl flex items-center justify-between px-4 py-3 border-b gap-2">
+          {/* Rotate button for images only - positioned in header */}
+          {images.length > 0 && images[mediaIndex] && !images[mediaIndex].type.startsWith("video/") && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setImageRotations((prev) => ({
+                  ...prev,
+                  [mediaIndex]: ((prev[mediaIndex] || 0) + 90) % 360,
+                }));
+              }}
+              className="p-2 rounded-full hover:bg-gray-100"
+              aria-label="Rotate image"
+            >
+              <RotateCw className="w-5 h-5 text-gray-600" />
+            </Button>
+          )}
+          <div className="flex-1"></div>
           <button
             className="p-2 rounded-full hover:bg-gray-100"
             onClick={handleClose}
@@ -652,6 +861,7 @@ const CreatePost = ({
                           ? getAspectRatioNumber(videoAspectRatio)
                           : getAspectRatioNumber(imageAspectRatio)
                       }
+                      rotation={images[mediaIndex].type.startsWith("image/") ? (imageRotations[mediaIndex] || 0) : 0}
                       onCropChange={(params: any) => {
                         setVideoCropParams((prev) => ({
                           ...prev,
@@ -664,6 +874,10 @@ const CreatePost = ({
                       src={imageUrls[mediaIndex]}
                       alt={`Preview ${mediaIndex + 1}`}
                       className="max-h-[50vh] w-full object-contain rounded-md"
+                      style={{
+                        transform: `rotate(${imageRotations[mediaIndex] || 0}deg)`,
+                        transition: 'transform 0.3s ease',
+                      }}
                     />
                   )}
                   {/* Right navigation button (desktop only, not last media) */}

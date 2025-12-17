@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { useWishlist } from "@/hooks/useWishlist";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -39,10 +40,13 @@ const VehicleDetail = () => {
   const [vehicle, setVehicle] = useState<VehicleWithProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [isWishlisted, setIsWishlisted] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
+  
+  // Check if vehicle is in wishlist
+  const isWishlisted = vehicle ? isInWishlist(String(vehicle.id), 'vehicle') : false;
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -103,19 +107,23 @@ const VehicleDetail = () => {
     fetchVehicle();
   }, [id]);
 
-  const toggleWishlist = () => {
-    if (!isAuthenticated) {
+  const toggleWishlist = async () => {
+    if (!isAuthenticated || !user) {
       router.push("/auth");
       return;
     }
 
-    setIsWishlisted(!isWishlisted);
+    if (!vehicle) return;
 
-    toast({
-      description: isWishlisted
-        ? `${vehicle?.make} ${vehicle?.model} removed from your wishlist`
-        : `${vehicle?.make} ${vehicle?.model} added to your wishlist`,
-    });
+    try {
+      if (isWishlisted) {
+        await removeFromWishlist(String(vehicle.id), 'vehicle');
+      } else {
+        await addToWishlist(String(vehicle.id), 'vehicle');
+      }
+    } catch (error) {
+      console.error("Error toggling wishlist:", error);
+    }
   };
 
   const handleShare = () => {

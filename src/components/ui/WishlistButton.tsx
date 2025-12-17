@@ -1,4 +1,3 @@
-
 import { Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWishlist } from "@/hooks/useWishlist";
@@ -20,35 +19,36 @@ export const WishlistButton = ({
   size = 'default',
   className 
 }: WishlistButtonProps) => {
-  const { isInWishlist, addToWishlist, removeFromWishlist } = useWishlist();
-  const inWishlist = isInWishlist(itemId, itemType);
+  const { addToWishlist, removeFromWishlist, wishlistItems } = useWishlist();
+  const [isProcessing, setIsProcessing] = useState(false);
 
- const [isProcessing, setIsProcessing] = useState(false);
+  // Normalize itemId to string for consistent comparison
+  const normalizedItemId = String(itemId);
+  const normalizedItemType = itemType.toLowerCase() as 'product' | 'vehicle';
 
+  // Calculate inWishlist directly from wishlistItems to ensure reactivity
+  const inWishlist = wishlistItems.some(
+    (item) => String(item.item_id) === normalizedItemId && item.item_type === normalizedItemType
+  );
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-const handleClick = async (e: React.MouseEvent) => {
-  e.preventDefault();
-  e.stopPropagation();
+    if (isProcessing) return;
 
-  if (isProcessing) return;
+    setIsProcessing(true);
 
-  setIsProcessing(true);
-
-  try {
-    if (inWishlist) {
-      await removeFromWishlist(itemId, itemType);
-    } else {
-      await addToWishlist(itemId, itemType);
+    try {
+      if (inWishlist) {
+        await removeFromWishlist(normalizedItemId, normalizedItemType);
+      } else {
+        await addToWishlist(normalizedItemId, normalizedItemType);
+      }
+    } finally {
+      setIsProcessing(false);
     }
- 
-    await delay(1000);
-  } finally {
-    setIsProcessing(false);
-  }
-};
-
+  };
 
   if (variant === 'icon') {
     return (
@@ -57,7 +57,7 @@ const handleClick = async (e: React.MouseEvent) => {
         size="icon"
         onClick={handleClick}
         className={cn(
-          "h-8 w-8 hover:bg-red-100 bg-white rounded-full",
+          "h-8 w-8 hover:bg-red-100 bg-white rounded-full transition-colors",
           className
         )}
         disabled={isProcessing}
@@ -65,8 +65,10 @@ const handleClick = async (e: React.MouseEvent) => {
         <Heart
           size={16}
           className={cn(
-            "transition-colors",
-            inWishlist ? "fill-red-500 text-red-500" : "text-gray-400 hover:text-red-500"
+            "transition-colors duration-300",
+            inWishlist 
+              ? "fill-red-500 text-red-500 stroke-red-500" 
+              : "fill-none stroke-gray-400 text-gray-400"
           )}
         />
       </Button>
@@ -86,7 +88,6 @@ const handleClick = async (e: React.MouseEvent) => {
       )}
       disabled={isProcessing}
     >
-      
       {inWishlist ? "In Wishlist" : "Add to Wishlist"}
     </Button>
   );

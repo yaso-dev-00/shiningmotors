@@ -1083,8 +1083,9 @@ const PostCard = ({
                           src={item.url}
                           alt=""
                          
-                          width={100}
-                          height={100}
+                          width={1000}
+                          height={1000}
+
                         
                           className="object-cover h-full w-full"
                           // sizes="(min-width: 768px) 80vw, 100vw"
@@ -1198,8 +1199,8 @@ const PostCard = ({
                   src={media[0].url}
                   alt="Post content"
                  
-                 width={100}
-                 height={100}
+                 width={1000}
+                 height={1000}
                   className="object-cover h-full w-full"
                   // sizes="(min-width: 768px) 80vw, 100vw"
                   onError={(e) => {
