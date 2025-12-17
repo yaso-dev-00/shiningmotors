@@ -9,51 +9,148 @@ import supabase from "@/integrations/supabase/client";
 
 export const runtime = "nodejs";
 
-// Get ffmpeg path with proper validation
+// Get ffmpeg path with proper validation - works in all environments
 function getFfmpegPath(): string {
+  const isWindows = os.platform() === "win32";
+  const isLinux = os.platform() === "linux";
+  const isDarwin = os.platform() === "darwin";
+  
   // Check ffmpeg-static first (if it exists and the file is present)
   // ffmpeg-static can be a string path or null/undefined
   if (ffmpegStatic && typeof ffmpegStatic === "string") {
+    let ffmpegPath = ffmpegStatic;
+    
     // Try the direct path first
-    if (fs.existsSync(ffmpegStatic)) {
-      console.log("[crop] Using ffmpeg-static (direct path exists):", ffmpegStatic);
-      return ffmpegStatic;
+    try {
+      if (fs.existsSync(ffmpegPath)) {
+        console.log("[crop] Using ffmpeg-static (direct path exists):", ffmpegPath);
+        return ffmpegPath;
+      }
+    } catch (err) {
+      // File system check might fail in some environments, continue
+      console.log("[crop] Could not verify direct path, continuing search");
     }
     
-    // On Vercel, the path might have /ROOT/ prefix or need resolution
-    // Try to resolve the actual binary location
+    // On Windows, try with .exe extension
+    if (isWindows && !ffmpegPath.endsWith(".exe")) {
+      const exePath = ffmpegPath + ".exe";
+      try {
+        if (fs.existsSync(exePath)) {
+          console.log("[crop] Using ffmpeg-static (with .exe extension):", exePath);
+          return exePath;
+        }
+      } catch {
+        // Continue
+      }
+    }
+    
+    // Try to resolve the actual binary location for all environments
     try {
       // Method 1: Try to resolve the package and find binary
       let packageDir: string | null = null;
       try {
         const packagePath = require.resolve("ffmpeg-static/package.json");
         packageDir = path.dirname(packagePath);
+        console.log("[crop] Found ffmpeg-static package at:", packageDir);
       } catch {
         // If that fails, try to extract from the path we have
-        const match = ffmpegStatic.match(/(.*node_modules\/ffmpeg-static)/);
+        const match = ffmpegStatic.match(/(.*node_modules[\/\\]ffmpeg-static)/);
         if (match) {
           packageDir = match[1];
         }
+        // Also try to find it relative to current working directory
+        if (!packageDir) {
+          const possiblePaths = [
+            path.join(process.cwd(), "node_modules", "ffmpeg-static"),
+            path.resolve("node_modules", "ffmpeg-static"),
+          ];
+          for (const testPath of possiblePaths) {
+            try {
+              if (fs.existsSync(testPath)) {
+                packageDir = testPath;
+                break;
+              }
+            } catch {
+              // Continue
+            }
+          }
+        }
       }
       
-      // Method 2: Try removing /ROOT/ prefix (Vercel-specific)
-      const pathsToTry = [
+      // Method 2: Build comprehensive list of paths to try for all platforms
+      const pathsToTry: string[] = [
         // Original path
         ffmpegStatic,
-        // Without /ROOT/ prefix
-        ffmpegStatic.replace(/^\/ROOT\//, ""),
-        // Resolved from package directory
-        ...(packageDir ? [
-          path.join(packageDir, "ffmpeg"),
-          path.join(packageDir, "ffmpeg.exe"),
-          path.join(packageDir, "bin", "ffmpeg"),
-          path.join(packageDir, "bin", "ffmpeg.exe"),
-        ] : []),
-        // Try resolving relative to current working directory
-        path.resolve(process.cwd(), ffmpegStatic.replace(/^\/ROOT\//, "")),
-        // Try absolute resolution
-        path.resolve(ffmpegStatic),
       ];
+      
+      // Platform-specific extensions
+      if (isWindows) {
+        pathsToTry.push(ffmpegStatic + ".exe");
+      }
+      
+      // Remove /ROOT/ prefix (Vercel/serverless environments)
+      const withoutRoot = ffmpegStatic.replace(/^\/ROOT\//, "");
+      if (withoutRoot !== ffmpegStatic) {
+        pathsToTry.push(withoutRoot);
+        if (isWindows) {
+          pathsToTry.push(withoutRoot + ".exe");
+        }
+      }
+      
+      // Resolved from package directory
+      if (packageDir) {
+        // Common locations
+        pathsToTry.push(
+          path.join(packageDir, "ffmpeg"),
+          path.join(packageDir, "bin", "ffmpeg")
+        );
+        
+        if (isWindows) {
+          pathsToTry.push(
+            path.join(packageDir, "ffmpeg.exe"),
+            path.join(packageDir, "bin", "ffmpeg.exe")
+          );
+        }
+        
+        // Platform-specific directories (ffmpeg-static structure)
+        if (isWindows) {
+          pathsToTry.push(
+            path.join(packageDir, "platform", "win32", "x64", "ffmpeg.exe"),
+            path.join(packageDir, "platform", "win32", "ia32", "ffmpeg.exe"),
+            path.join(packageDir, "platform", "win32", "arm64", "ffmpeg.exe")
+          );
+        } else if (isLinux) {
+          pathsToTry.push(
+            path.join(packageDir, "platform", "linux", "x64", "ffmpeg"),
+            path.join(packageDir, "platform", "linux", "ia32", "ffmpeg"),
+            path.join(packageDir, "platform", "linux", "arm64", "ffmpeg"),
+            path.join(packageDir, "platform", "linux", "armv7", "ffmpeg")
+          );
+        } else if (isDarwin) {
+          pathsToTry.push(
+            path.join(packageDir, "platform", "darwin", "x64", "ffmpeg"),
+            path.join(packageDir, "platform", "darwin", "arm64", "ffmpeg")
+          );
+        }
+      }
+      
+      // Try resolving relative to current working directory
+      pathsToTry.push(
+        path.resolve(process.cwd(), withoutRoot),
+        path.resolve(withoutRoot)
+      );
+      if (isWindows) {
+        pathsToTry.push(
+          path.resolve(process.cwd(), withoutRoot + ".exe"),
+          path.resolve(withoutRoot + ".exe")
+        );
+      }
+      
+      // Try absolute resolution
+      pathsToTry.push(path.resolve(ffmpegStatic));
+      if (isWindows) {
+        pathsToTry.push(path.resolve(ffmpegStatic) + ".exe");
+      }
       
       // Remove duplicates
       const uniquePaths = [...new Set(pathsToTry)];
@@ -173,18 +270,12 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const video = formData.get("video");
+    const videoUrl = formData.get("videoUrl"); // New: Supabase storage URL
     const cropX = Number(formData.get("cropX") ?? 0);
     const cropY = Number(formData.get("cropY") ?? 0);
     const cropWidth = Number(formData.get("cropWidth") ?? 0);
     const cropHeight = Number(formData.get("cropHeight") ?? 0);
     const userId = String(formData.get("userId") ?? "");
-
-    if (!(video instanceof Blob)) {
-      return NextResponse.json(
-        { error: "Video file is required" },
-        { status: 400 }
-      );
-    }
 
     if (!userId) {
       return NextResponse.json(
@@ -200,32 +291,146 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Write uploaded video to a temporary file
-    const arrayBuffer = await video.arrayBuffer();
-    await fs.promises.writeFile(inputPath, Buffer.from(arrayBuffer));
+    // Handle video input: either from FormData (small files) or from Supabase URL (large files)
+    if (videoUrl && typeof videoUrl === "string") {
+      // Download video from Supabase storage URL (for large files)
+      console.log("[crop] Downloading video from Supabase:", videoUrl);
+      try {
+        const response = await fetch(videoUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to download video: ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        await fs.promises.writeFile(inputPath, Buffer.from(arrayBuffer));
+        console.log("[crop] Video downloaded successfully");
+      } catch (err) {
+        console.error("[crop] Error downloading video:", err);
+        return NextResponse.json(
+          { error: `Failed to download video: ${err instanceof Error ? err.message : "Unknown error"}` },
+          { status: 500 }
+        );
+      }
+    } else if (video instanceof Blob) {
+      // For small files, use direct upload (backward compatibility)
+      const arrayBuffer = await video.arrayBuffer();
+      const fileSizeMB = arrayBuffer.byteLength / (1024 * 1024);
+      
+      // Warn if file is large (Vercel limit is ~4.5MB)
+      if (fileSizeMB > 4) {
+        console.warn(`[crop] Large video file detected (${fileSizeMB.toFixed(2)}MB). Consider using videoUrl parameter for better reliability.`);
+      }
+      
+      await fs.promises.writeFile(inputPath, Buffer.from(arrayBuffer));
+    } else {
+      return NextResponse.json(
+        { error: "Either video file or videoUrl is required" },
+        { status: 400 }
+      );
+    }
 
     // Get and validate ffmpeg path
     const ffmpegPath = getFfmpegPath();
     
     // Log the path being used for debugging
-    console.log("[crop] Final ffmpeg path:", ffmpegPath);
+    console.log("[crop] Initial ffmpeg path from getFfmpegPath():", ffmpegPath);
     console.log("[crop] ffmpeg-static value:", ffmpegStatic);
+    console.log("[crop] Platform:", os.platform());
+    console.log("[crop] Current working directory:", process.cwd());
+    
+    // On Windows, we need to ensure the path is correct
+    // ffmpeg-static might return a path without .exe extension
+    const isWindows = os.platform() === "win32";
+    let finalFfmpegPath = ffmpegPath;
+    
+    // On Windows, if path doesn't end with .exe and file doesn't exist, try with .exe
+    if (isWindows && !ffmpegPath.endsWith(".exe") && ffmpegPath !== "ffmpeg") {
+      const exePath = ffmpegPath + ".exe";
+      try {
+        if (fs.existsSync(exePath)) {
+          finalFfmpegPath = exePath;
+          console.log("[crop] Using .exe extension:", finalFfmpegPath);
+        }
+      } catch {
+        // Continue with original path
+      }
+    }
     
     // On Vercel, file existence checks might fail due to serverless environment
     // We'll try to use the path anyway and let spawn handle the error
     // Only validate if we're not using the fallback "ffmpeg" command
-    if (ffmpegPath !== "ffmpeg") {
+    if (finalFfmpegPath !== "ffmpeg") {
       try {
-        if (fs.existsSync(ffmpegPath)) {
+        if (fs.existsSync(finalFfmpegPath)) {
           // Make sure the binary is executable (important on Unix systems like Vercel)
           try {
-            fs.chmodSync(ffmpegPath, 0o755);
+            if (!isWindows) {
+              fs.chmodSync(finalFfmpegPath, 0o755);
+            }
           } catch (chmodErr) {
             // Ignore chmod errors - file might already be executable or on Windows
             console.log("[crop] Could not set execute permissions (this is OK on Windows or if already executable)");
           }
         } else {
-          console.warn(`[crop] Warning: ffmpeg path not found at ${ffmpegPath}, but attempting to use it anyway (Vercel serverless behavior)`);
+          console.warn(`[crop] Warning: ffmpeg path not found at ${finalFfmpegPath}, searching alternatives...`);
+          // Try to find it in node_modules for all platforms
+          try {
+            const nodeModulesPath = path.join(process.cwd(), "node_modules", "ffmpeg-static");
+            const possiblePaths: string[] = [];
+            
+            // Platform-specific paths
+            if (isWindows) {
+              possiblePaths.push(
+                path.join(nodeModulesPath, "ffmpeg.exe"),
+                path.join(nodeModulesPath, "bin", "ffmpeg.exe"),
+                path.join(nodeModulesPath, "platform", "win32", "x64", "ffmpeg.exe"),
+                path.join(nodeModulesPath, "platform", "win32", "ia32", "ffmpeg.exe"),
+                path.join(nodeModulesPath, "platform", "win32", "arm64", "ffmpeg.exe")
+              );
+            } else if (os.platform() === "linux") {
+              possiblePaths.push(
+                path.join(nodeModulesPath, "ffmpeg"),
+                path.join(nodeModulesPath, "bin", "ffmpeg"),
+                path.join(nodeModulesPath, "platform", "linux", "x64", "ffmpeg"),
+                path.join(nodeModulesPath, "platform", "linux", "arm64", "ffmpeg"),
+                path.join(nodeModulesPath, "platform", "linux", "armv7", "ffmpeg")
+              );
+            } else if (os.platform() === "darwin") {
+              possiblePaths.push(
+                path.join(nodeModulesPath, "ffmpeg"),
+                path.join(nodeModulesPath, "bin", "ffmpeg"),
+                path.join(nodeModulesPath, "platform", "darwin", "x64", "ffmpeg"),
+                path.join(nodeModulesPath, "platform", "darwin", "arm64", "ffmpeg")
+              );
+            }
+            
+            // Also try generic paths
+            possiblePaths.push(
+              path.join(nodeModulesPath, "ffmpeg"),
+              path.join(nodeModulesPath, "bin", "ffmpeg")
+            );
+            
+            for (const testPath of possiblePaths) {
+              try {
+                if (fs.existsSync(testPath)) {
+                  finalFfmpegPath = testPath;
+                  console.log("[crop] Found ffmpeg in node_modules:", finalFfmpegPath);
+                  // Set execute permissions for Unix systems
+                  if (!isWindows) {
+                    try {
+                      fs.chmodSync(finalFfmpegPath, 0o755);
+                    } catch {
+                      // Ignore chmod errors
+                    }
+                  }
+                  break;
+                }
+              } catch {
+                // Continue searching
+              }
+            }
+          } catch (err) {
+            console.warn("[crop] Could not search node_modules:", err);
+          }
         }
       } catch (err) {
         console.warn(`[crop] Warning: Could not verify ffmpeg path existence, but attempting to use it anyway:`, err);
@@ -247,12 +452,13 @@ export async function POST(req: NextRequest) {
 
       const isWindows = os.platform() === "win32";
       // On Windows, use shell: true if using "ffmpeg" command, otherwise use direct path
-      const spawnOptions = ffmpegPath === "ffmpeg" && isWindows 
+      // Also use shell: true if the path contains spaces (common on Windows)
+      const spawnOptions = (finalFfmpegPath === "ffmpeg" || finalFfmpegPath.includes(" ")) && isWindows 
         ? { shell: true } 
         : {};
       
-      console.log("[crop] Executing:", ffmpegPath, args.join(" "));
-      const proc = spawn(ffmpegPath, args, spawnOptions);
+      console.log("[crop] Executing:", finalFfmpegPath, args.join(" "));
+      const proc = spawn(finalFfmpegPath, args, spawnOptions);
       
       let stderr = "";
 

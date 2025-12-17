@@ -17,6 +17,7 @@ import { DesktopNavigation } from "./header/DesktopNavigation";
 import { useMyContext } from "@/contexts/GlobalContext";
 import Image from "next/image";
 const Header = () => {
+  const path = usePathname();
   const [isVisible, setIsVisible] = useState(true);
   const [isTabletOrMobile, setIsTabletOrMobile] = useState(false);
   const router = useRouter();
@@ -180,8 +181,8 @@ const Header = () => {
           </motion.header>
         )}
       </AnimatePresence>
-
-      {isVisible && typeof window !== 'undefined' && !window.location.pathname.includes("/admin") && (
+    
+      {isVisible && !path.includes("/admin") && (
         <>
           <MainNavigation />
           {/* Mobile search below main navigation */}
@@ -190,6 +191,7 @@ const Header = () => {
           </div>
         </>
       )}
+     
     </>
   );
 };
