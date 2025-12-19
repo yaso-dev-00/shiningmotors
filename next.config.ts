@@ -19,8 +19,15 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: '**.supabase.co',
-        pathname: '/storage/v1/object/public/**',
+        hostname: '*.supabase.co',
+      },
+      {
+        protocol: 'https',
+        hostname: 'rzrroghnzintpxspwauf.supabase.co',
+      },
+      {
+        protocol: 'https',
+        hostname: 'avatars.dicebear.com',
       },
     ],
   },

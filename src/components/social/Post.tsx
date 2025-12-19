@@ -365,7 +365,40 @@ const Post = ({
       }
     };
 
+    const checkSaveStatus = async () => {
+      if (!isAuthenticated || !user) return;
+
+      try {
+        // Get access token for authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
+
+        const response = await fetch(
+          `/api/saved-posts?postId=${id}&userId=${user.id}&_t=${Date.now()}`,
+          {
+            cache: 'no-store',
+            method: 'GET',
+            headers: {
+              ...(accessToken && {
+                'Authorization': `Bearer ${accessToken}`,
+              }),
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
+          }
+        );
+
+        if (response.ok) {
+          const { isSaved: savedStatus } = await response.json();
+          setIsSaved(savedStatus);
+        }
+      } catch (error) {
+        console.error("Error checking saved status:", error);
+      }
+    };
+
     checkLikeStatus();
+    checkSaveStatus();
   }, [id, isAuthenticated, user]);
 
   const handleLikeToggle = async (e: React.MouseEvent) => {
@@ -414,15 +447,76 @@ const Post = ({
     return () => clearTimeout(timeout);
   }, [likesAnim]);
 
-  const handleSaveToggle = (e: React.MouseEvent) => {
+  const handleSaveToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
+
+    if (!isAuthenticated) {
+      router.push("/auth" as any);
+      return;
+    }
+
+    if (!user) return;
+
+    const previousSavedState = isSaved;
+    // Optimistic update
     setIsSaved(!isSaved);
     setSaveAnim(true);
-    toast({
-      description: isSaved
-        ? "Removed from saved items"
-        : "Added to saved items",
-    });
+
+    try {
+      if (previousSavedState) {
+        // Unsave the post
+        const deleteResponse = await supabase
+          .from("saved_post")
+          .delete()
+          .eq("post_id", id)
+          .eq("user_id", user.id);
+
+        if (deleteResponse.error) {
+          throw deleteResponse.error;
+        }
+
+        toast({
+          description: "Removed from saved items",
+        });
+      } else {
+        // Get access token for authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
+
+        // Save the post via API
+        const response = await fetch('/api/saved-posts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(accessToken && { 'Authorization': `Bearer ${accessToken}` }),
+          },
+          body: JSON.stringify({
+            post_id: id,
+            user_id: user.id,
+          }),
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to save post');
+        }
+
+        toast({
+          description: "Added to saved items",
+        });
+      }
+    } catch (error) {
+      // Revert optimistic update on error
+      setIsSaved(previousSavedState);
+      console.error("Error toggling save:", error);
+      toast({
+        description: previousSavedState
+          ? "Failed to unsave post"
+          : "Failed to save post",
+        variant: "destructive",
+      });
+    }
   };
 
   useEffect(() => {
@@ -576,7 +670,7 @@ const Post = ({
       let parsedTags = [];
       try {
         parsedTags =
-          typeof user_tag === "string" ? JSON.parse(user_tag) : user_tag;
+          typeof user_tag === "string" ? JSON.parse(user_tag as string) : user_tag;
       } catch (err) {
         console.error("Invalid user_tag format", err);
       }
@@ -636,7 +730,7 @@ const Post = ({
       }, 200);
     }
   }, []);
-
+console.log(media, "media");
   return (
     <TooltipProvider delayDuration={0}>
       <Card
@@ -707,12 +801,7 @@ const Post = ({
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
-                  setIsSaved(!isSaved);
-                  toast({
-                    description: isSaved
-                      ? "Removed from saved items"
-                      : "Added to saved items",
-                  });
+                  handleSaveToggle(e);
                 }}
               >
                 {isSaved ? "Unsave" : "Save"} post
@@ -763,6 +852,7 @@ const Post = ({
                     fill
                     className="object-contain"
                     sizes="(min-width: 768px) 80vw, 100vw"
+                    priority
                   />
                 </div>
               ) : (
@@ -874,16 +964,9 @@ const Post = ({
                 {media.map((item, idx) => (
                   <SwiperSlide key={idx} className="relative">
                     {item.type === "image" ? (
-                      <div className="relative w-full h-[300px] md:h-[400px]">
-                        <Image
-                          src={item.url}
-                          alt={`Post media ${idx + 1}`}
-                          fill
-                          className="object-contain"
-                          sizes="(min-width: 768px) 80vw, 100vw"
-                        />
-                      </div>
-                    ) : (
+                    <div className="relative w-full h-[300px] md:h-[400px]">
+                     <img src={item.url} alt={`Post media ${idx + 1}`} className="w-full h-full object-cover" />
+                    </div>                    ) : (
                       <div
                         className={
                           videoAspects[idx] === "portrait"
@@ -1145,3 +1228,4 @@ const Post = ({
 };
 
 export default Post;
+

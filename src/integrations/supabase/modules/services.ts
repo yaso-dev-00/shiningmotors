@@ -307,6 +307,40 @@ export const deleteService = async (id: string): Promise<{
   error: Error | unknown 
 }> => {
   try {
+    // Delete related records first to avoid foreign key constraint violations
+    // 1. Delete saved_post records
+    await supabase
+      .from("saved_post")
+      .delete()
+      .eq("post_id", id);
+
+    // 2. Delete likes
+    await supabase
+      .from("likes")
+      .delete()
+      .eq("post_id", id);
+
+    // 3. Delete comments and their replies
+    const { data: comments } = await supabase
+      .from("comments")
+      .select("id")
+      .eq("post_id", id);
+
+    if (comments && comments.length > 0) {
+      const commentIds = comments.map(c => c.id);
+      // Delete replies to these comments
+      await supabase
+        .from("comments")
+        .delete()
+        .in("parent_id", commentIds);
+      // Delete the comments themselves
+      await supabase
+        .from("comments")
+        .delete()
+        .eq("post_id", id);
+    }
+
+    // 4. Now delete the post itself
     const { error } = await supabase
       .from("posts")
       .delete()

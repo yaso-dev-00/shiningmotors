@@ -150,7 +150,7 @@ export default function FloatingQuickSettings() {
       <AnimatePresence>
         {open && (
           <motion.div
-            className="fixed inset-0 bg-black bg-opacity-50 overflow-hidden z-40 flex items-center justify-center"
+            className="fixed inset-0 bg-black bg-opacity-50 overflow-hidden z-50 flex items-center justify-center"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
