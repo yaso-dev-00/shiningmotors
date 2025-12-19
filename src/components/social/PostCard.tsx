@@ -35,6 +35,7 @@ import "swiper/css/navigation";
 import "swiper/css/pagination";
 import { ShareModal } from "@/lib/shareModel";
 import CommentsSection from "./CommentsSection";
+import { CommentsBottomSheet } from "./CommentsBottomSheet";
 import { ReportModal } from "./reportModel";
 import { useMyContext, ContextTypes } from "@/contexts/GlobalContext";
 import { socialApi } from "@/integrations/supabase/modules/social";
@@ -200,6 +201,7 @@ const PostCard = ({
 
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
   const [isMobile, setIsMobile] = useState(false);
 
@@ -297,13 +299,33 @@ const PostCard = ({
 
   useEffect(() => {
     const fetchCommentsCount = async () => {
-      const { count, error } = await supabase
-        .from("comments")
-        .select("*", { count: "exact", head: true })
-        .eq("post_id", id);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
 
-      if (!error && typeof count === "number") {
-        setCommentsCount(count);
+        const response = await fetch(
+          `/api/comments?postId=${id}&limit=1&_t=${Date.now()}`,
+          {
+            cache: 'no-store',
+            method: 'GET',
+            headers: {
+              ...(accessToken && {
+                'Authorization': `Bearer ${accessToken}`,
+              }),
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
+          }
+        );
+
+        if (response.ok) {
+          const { count } = await response.json();
+          if (typeof count === "number") {
+            setCommentsCount(count);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching comments count:", error);
       }
     };
 
@@ -312,15 +334,34 @@ const PostCard = ({
 
   useEffect(() => {
     const fetchRecentComments = async () => {
-      const { data, count, error } = await supabase
-        .from("comments")
-        .select("*, profile:profiles(*)", { count: "exact" })
-        .eq("post_id", id)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      if (!error && data) {
-        setRecentComments(data.reverse()); // oldest first
-        setTotalComments(count || 0);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
+
+        const response = await fetch(
+          `/api/comments?postId=${id}&limit=1&orderBy=desc&_t=${Date.now()}`,
+          {
+            cache: 'no-store',
+            method: 'GET',
+            headers: {
+              ...(accessToken && {
+                'Authorization': `Bearer ${accessToken}`,
+              }),
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
+          }
+        );
+
+        if (response.ok) {
+          const { data, count } = await response.json();
+          if (data) {
+            setRecentComments(data.reverse()); // oldest first
+            setTotalComments(count || 0);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching recent comments:", error);
       }
     };
     fetchRecentComments();
@@ -348,25 +389,62 @@ const PostCard = ({
     setTotalComments((prev) => prev + 1);
     setCommentInput("");
     try {
-      const { error } = await supabase.from("comments").insert({
-        user_id: user.id,
-        post_id: id,
-        content: optimisticComment.content,
-        parent_id: null,
+      // Get access token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      const response = await fetch('/api/comments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken && { 'Authorization': `Bearer ${accessToken}` }),
+        },
+        body: JSON.stringify({
+          post_id: id,
+          user_id: user.id,
+          content: optimisticComment.content,
+          parent_id: null,
+        }),
+        cache: 'no-store',
       });
-      if (error) throw error;
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create comment');
+      }
     } catch (e) {
       // Optionally show error toast
     } finally {
-      // Always re-fetch to sync
-      const { data, count } = await supabase
-        .from("comments")
-        .select("*, profile:profiles(*)", { count: "exact" })
-        .eq("post_id", id)
-        .order("created_at", { ascending: false })
-        .limit(2);
-      setRecentComments(data ? data.reverse() : []);
-      setTotalComments(count || 0);
+      // Wait a bit for database to update, then re-fetch to sync with fresh data
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
+
+        const response = await fetch(
+          `/api/comments?postId=${id}&limit=2&orderBy=desc&_t=${Date.now()}`,
+          {
+            cache: 'no-store',
+            method: 'GET',
+            headers: {
+              ...(accessToken && {
+                'Authorization': `Bearer ${accessToken}`,
+              }),
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
+          }
+        );
+
+        if (response.ok) {
+          const { data, count } = await response.json();
+          setRecentComments(data ? data.reverse() : []);
+          setTotalComments(count || 0);
+        }
+      } catch (error) {
+        console.error("Error re-fetching comments:", error);
+      }
       setCommentLoading(false);
     }
   };
@@ -476,15 +554,28 @@ const PostCard = ({
       if (!isAuthenticated || !user) return;
 
       try {
-        const { data, error } = await supabase
-          .from("saved_post")
-          .select()
-          .eq("post_id", id)
-          .eq("user_id", user.id)
-          .maybeSingle();
+        // Get access token for authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
 
-        if (!error && data) {
-          setIsSaved(true);
+        const response = await fetch(
+          `/api/saved-posts?postId=${id}&userId=${user.id}&_t=${Date.now()}`,
+          {
+            cache: 'no-store',
+            method: 'GET',
+            headers: {
+              ...(accessToken && {
+                'Authorization': `Bearer ${accessToken}`,
+              }),
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
+          }
+        );
+
+        if (response.ok) {
+          const { isSaved } = await response.json();
+          setIsSaved(isSaved);
         }
       } catch (error) {
         console.error("Error checking saved status:", error);
@@ -566,8 +657,6 @@ const PostCard = ({
 
   const handleSaveToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsSaved(!isSaved);
-    setSaveAnim(true);
 
     if (!isAuthenticated) {
       router.push("/auth" as any);
@@ -576,42 +665,92 @@ const PostCard = ({
 
     if (!user) return;
 
+    const previousSavedState = isSaved;
+    // Optimistic update
+    setIsSaved(!isSaved);
+    setSaveAnim(true);
+
     try {
-      if (isSaved) {
-        await supabase
+      if (previousSavedState) {
+        // Unsave the post
+        const deleteResponse = await supabase
           .from("saved_post")
           .delete()
           .eq("post_id", id)
           .eq("user_id", user.id);
+
+        if (deleteResponse.error) {
+          throw deleteResponse.error;
+        }
+
         toast({
           description: "Removed from saved items",
         });
       } else {
-        await supabase.from("saved_post").insert({
-          post_id: id,
-          user_id: user.id,
+        // Get access token for authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
+
+        // Save the post via API
+        const response = await fetch('/api/saved-posts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(accessToken && { 'Authorization': `Bearer ${accessToken}` }),
+          },
+          body: JSON.stringify({
+            post_id: id,
+            user_id: user.id,
+          }),
+          cache: 'no-store',
         });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to save post');
+        }
+
         toast({
           description: "Added to saved items",
-          // action: (
-          //   <button
-          //     className="ml-2 underline text-blue-600 text-xs"
-          //     onClick={() => {
-          //       navigate(`/profile/${user.id}?tab=saved`);
-          //     }}
-          //   >
-          //     View
-          //   </button>
-          // ),
         });
       }
-      setIsSaved(!isSaved);
+
+      // Wait a bit for database to update, then re-fetch saved status to ensure UI is in sync
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const { data: { session: checkSession } } = await supabase.auth.getSession();
+      const checkAccessToken = checkSession?.access_token;
+      
+      const checkResponse = await fetch(
+        `/api/saved-posts?postId=${id}&userId=${user.id}&_t=${Date.now()}`,
+        {
+          cache: 'no-store',
+          method: 'GET',
+          headers: {
+            ...(checkAccessToken && {
+              'Authorization': `Bearer ${checkAccessToken}`,
+            }),
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+        }
+      );
+
+      if (checkResponse.ok) {
+        const { isSaved: currentSavedStatus } = await checkResponse.json();
+        setIsSaved(currentSavedStatus);
+      } else {
+        // If re-fetch fails, revert to optimistic state (it's already set)
+        console.warn('Failed to re-fetch saved status, using optimistic update');
+      }
     } catch (error) {
-      console.error("Error toggling like:", error);
+      // Revert optimistic update on error
+      setIsSaved(previousSavedState);
+      console.error("Error toggling save:", error);
       toast({
-        description: isSaved
-          ? "Removed from saved items"
-          : "Added to saved items",
+        description: previousSavedState
+          ? "Failed to remove from saved items"
+          : "Failed to save post",
         variant: "destructive",
       });
     }
@@ -629,6 +768,9 @@ const PostCard = ({
   };
 
   const handlePostClick = () => {
+    // Store current URL and scroll position before navigating to modal
+    sessionStorage.setItem('preModalUrl', window.location.pathname);
+    sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
     router.push(`/social/post/${id}` as any);
   };
 
@@ -884,7 +1026,7 @@ const PostCard = ({
 
   const handleCommentClick = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    router.push(`/social/post/${id}#comments` as any);
+    setCommentsOpen(true); // Open bottom sheet instead of navigating
   };
 
   // Scroll to comments if state.scrollToComments is set
@@ -991,12 +1133,7 @@ const PostCard = ({
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
-                  setIsSaved(!isSaved);
-                  toast({
-                    description: isSaved
-                      ? "Removed from saved items"
-                      : "Added to saved items",
-                  });
+                  handleSaveToggle(e);
                 }}
               >
                 {isSaved ? "Unsave" : "Save"} post
@@ -1005,6 +1142,7 @@ const PostCard = ({
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
+                  sessionStorage.setItem('preModalUrl', window.location.pathname);
                   router.push(`/social/post/${id}` as any);
                 }}
               >
@@ -1470,6 +1608,20 @@ const PostCard = ({
         onClose={() => setIsDeleteConfirmOpen(false)}
         onConfirm={handleDeletePost}
         loading={deleteLoading}
+      />
+
+      <CommentsBottomSheet
+        postId={id}
+        open={commentsOpen}
+        onOpenChange={setCommentsOpen}
+        postAuthor={{
+          id: author.id || "",
+          username: author.username || "",
+          full_name: author.full_name || author.name || "",
+          avatar_url: author.avatar_url || author.avatar || "",
+        }}
+        postContent={content}
+        postMedia={media?.map((m) => m.url) || []}
       />
     </TooltipProvider>
   );

@@ -71,3 +71,4 @@ CHECK (type IN (
   'general'
 ));
 
+

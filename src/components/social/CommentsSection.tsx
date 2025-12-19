@@ -27,6 +27,11 @@ type LocalCommentWithProfile = Omit<CommentWithProfile, "profile"> & {
   parent_id?: string | null;
 };
 
+interface FlatComment extends LocalCommentWithProfile {
+  isReply?: boolean;
+  directParent?: LocalCommentWithProfile;
+}
+
 export function CommentsSection({ postId }: CommentsSectionProps) {
   const [comments, setComments] = useState<LocalCommentWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +40,8 @@ export function CommentsSection({ postId }: CommentsSectionProps) {
   const router = useRouter();
   const [commentsLimit, setCommentsLimit] = useState(10);
   const [totalCommentsCount, setTotalCommentsCount] = useState(0);
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const fetchAndSetComments = async () => {
     setLoading(true);
@@ -74,8 +81,22 @@ export function CommentsSection({ postId }: CommentsSectionProps) {
   const handleAddComment = async () => {
     if (!comment.trim() || !user) return;
 
+    // Determine parent_id based on reply state and @mention
+    let parentId: string | null = null;
     const originalComment = comment;
+
+    if (replyingToCommentId) {
+      const replyingToComment = comments.find(c => c.id === replyingToCommentId);
+      if (replyingToComment) {
+        const expectedMention = `@${replyingToComment.profile?.username || replyingToComment.profile?.full_name || ''} `;
+        if (comment.startsWith(expectedMention) || comment.startsWith(`@${replyingToComment.profile?.username} `) || comment.startsWith(`@${replyingToComment.profile?.full_name} `)) {
+          parentId = replyingToCommentId;
+        }
+      }
+    }
+
     setComment("");
+    setReplyingToCommentId(null);
 
     const optimisticComment: LocalCommentWithProfile = {
       id: `optimistic-${Date.now()}`,
@@ -84,7 +105,7 @@ export function CommentsSection({ postId }: CommentsSectionProps) {
       content: originalComment,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      parent_id: null,
+      parent_id: parentId,
       profile: {
         id: user.id,
         full_name: user.user_metadata?.full_name || "User",
@@ -101,7 +122,7 @@ export function CommentsSection({ postId }: CommentsSectionProps) {
         user_id: user.id,
         post_id: postId,
         content: originalComment,
-        parent_id: null,
+        parent_id: parentId,
       });
 
       if (error) throw error;
@@ -116,20 +137,131 @@ export function CommentsSection({ postId }: CommentsSectionProps) {
     }
   };
 
+  const handleReplyClick = (commentId: string, username: string) => {
+    setReplyingToCommentId(commentId);
+    setComment(`@${username} `);
+    inputRef.current?.focus();
+  };
+
   const handleShowMoreComments = () => {
     setCommentsLimit((prevLimit) => prevLimit + 10);
+  };
+
+  // Flatten and order comments like CommentsBottomSheet
+  const getFlatComments = (): FlatComment[] => {
+    const commentMap = new Map<string, LocalCommentWithProfile>();
+    comments.forEach((c) => commentMap.set(c.id, c));
+
+    const getRootParent = (comment: LocalCommentWithProfile): LocalCommentWithProfile => {
+      if (!comment.parent_id) return comment;
+      const parent = commentMap.get(comment.parent_id);
+      if (!parent) return comment;
+      return getRootParent(parent);
+    };
+
+    const getDirectParent = (comment: LocalCommentWithProfile): LocalCommentWithProfile | undefined => {
+      if (!comment.parent_id) return undefined;
+      return commentMap.get(comment.parent_id);
+    };
+
+    const rootParents = comments.filter((c) => !c.parent_id);
+    const allReplies = comments.filter((c) => c.parent_id);
+
+    const repliesByRootParent = new Map<string, LocalCommentWithProfile[]>();
+    allReplies.forEach((reply) => {
+      const rootParent = getRootParent(reply);
+      if (!repliesByRootParent.has(rootParent.id)) {
+        repliesByRootParent.set(rootParent.id, []);
+      }
+      repliesByRootParent.get(rootParent.id)!.push(reply);
+    });
+
+    const sortedRootParents = [...rootParents].sort((a, b) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
+    const flatComments: FlatComment[] = [];
+    
+    sortedRootParents.forEach((rootParent) => {
+      flatComments.push({ ...rootParent });
+      
+      const descendants = repliesByRootParent.get(rootParent.id) || [];
+      const sortedDescendants = descendants.sort((a, b) => {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      
+      sortedDescendants.forEach((descendant) => {
+        flatComments.push({ 
+          ...descendant, 
+          isReply: true,
+          directParent: getDirectParent(descendant),
+        });
+      });
+    });
+
+    return flatComments;
+  };
+
+  const formatTime = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+      if (diffInSeconds < 60) return "just now";
+      if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m`;
+      if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h`;
+      if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d`;
+      if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 604800)}w`;
+      if (diffInSeconds < 31536000) return `${Math.floor(diffInSeconds / 2592000)}mo`;
+      return `${Math.floor(diffInSeconds / 31536000)}y`;
+    } catch {
+      return dateString;
+    }
   };
 
   return (
     <div className="mt-4" onClick={(e) => e.stopPropagation()}>
       <h4 className="font-semibold mb-2">Comments</h4>
+      
+      {/* Reply indicator */}
+      {replyingToCommentId && (
+        <div className="mb-2 px-3 py-2 bg-gray-100 rounded-lg flex items-center justify-between">
+          <span className="text-xs text-gray-600">
+            Replying to{" "}
+            <span className="text-blue-500 font-medium">
+              @{comments.find(c => c.id === replyingToCommentId)?.profile?.username || 
+                comments.find(c => c.id === replyingToCommentId)?.profile?.full_name}
+            </span>
+          </span>
+          <button
+            onClick={() => {
+              setReplyingToCommentId(null);
+              setComment("");
+            }}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      
       <div className="mb-2 flex gap-2 items-center">
         <CommentInput
           value={comment}
-          onChange={setComment}
+          onChange={(val) => {
+            setComment(val);
+            // Clear reply state if @mention is removed
+            if (replyingToCommentId && !val.startsWith("@")) {
+              setReplyingToCommentId(null);
+            }
+          }}
           onSend={handleAddComment}
+          inputRef={inputRef}
+          placeholder={replyingToCommentId ? "Write a reply..." : "Add a comment..."}
         />
       </div>
+      
       {loading && comments.length === 0 ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
@@ -143,23 +275,28 @@ export function CommentsSection({ postId }: CommentsSectionProps) {
           ))}
         </div>
       ) : (
-        <CommentList
-          comments={comments}
-          allComments={comments}
-          postId={postId}
-          refreshComments={fetchAndSetComments}
-          router={router}
-          setComments={setComments}
-          setTotalCommentsCount={setTotalCommentsCount}
-        />
+        <div className="space-y-3">
+          {getFlatComments().map((c) => (
+            <FlatCommentItem
+              key={c.id}
+              comment={c}
+              user={user}
+              formatTime={formatTime}
+              router={router}
+              onReplyClick={handleReplyClick}
+              refreshComments={fetchAndSetComments}
+              allComments={comments}
+            />
+          ))}
+        </div>
       )}
+      
       {!loading && comments.length < totalCommentsCount && (
         <button
           onClick={handleShowMoreComments}
           className="text-blue-500 hover:underline mt-2 text-sm"
         >
           Show more comments
-          {/* ({totalCommentsCount - comments.length} remaining) */}
         </button>
       )}
       {!loading && comments.length === 0 && totalCommentsCount === 0 && (
@@ -169,142 +306,30 @@ export function CommentsSection({ postId }: CommentsSectionProps) {
   );
 }
 
-function CommentList({
-  comments,
-  allComments,
-  postId,
-  refreshComments,
+function FlatCommentItem({
+  comment,
+  user,
+  formatTime,
   router,
-  setComments,
-  setTotalCommentsCount,
-  parentId = null,
+  onReplyClick,
+  refreshComments,
+  allComments,
 }: {
-  comments: LocalCommentWithProfile[];
-  allComments: LocalCommentWithProfile[];
-  postId: string;
-  refreshComments: () => void;
+  comment: FlatComment;
+  user: any;
+  formatTime: (dateString: string) => string;
   router: ReturnType<typeof useRouter>;
-  setComments: React.Dispatch<React.SetStateAction<LocalCommentWithProfile[]>>;
-  setTotalCommentsCount: React.Dispatch<React.SetStateAction<number>>;
-  parentId?: string | null;
+  onReplyClick: (commentId: string, username: string) => void;
+  refreshComments: () => void;
+  allComments: LocalCommentWithProfile[];
 }) {
-  const { user } = useAuth();
-  const [replyingTo, setReplyingTo] = useState<string | null>(null);
-  const [reply, setReply] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
-  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(
-    new Set()
-  );
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [repliesShownMap, setRepliesShownMap] = useState<{
-    [key: string]: number;
-  }>({});
-  const DEFAULT_REPLIES_SHOWN = 0; // Show 0 replies by default
 
-  const formatTime = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-      if (diffInSeconds < 60) {
-        return "just now";
-      }
-
-      if (diffInSeconds < 3600) {
-        const minutes = Math.floor(diffInSeconds / 60);
-        return `${minutes}m`;
-      }
-
-      if (diffInSeconds < 86400) {
-        const hours = Math.floor(diffInSeconds / 3600);
-        return `${hours}h`;
-      }
-
-      if (diffInSeconds < 604800) {
-        const days = Math.floor(diffInSeconds / 86400);
-        return `${days}d`;
-      }
-
-      if (diffInSeconds < 2592000) {
-        const weeks = Math.floor(diffInSeconds / 604800);
-        return `${weeks}w`;
-      }
-
-      if (diffInSeconds < 31536000) {
-        const months = Math.floor(diffInSeconds / 2592000);
-        return `${months}mo`;
-      }
-
-      const years = Math.floor(diffInSeconds / 31536000);
-      return `${years}y`;
-    } catch (error) {
-      return dateString;
-    }
-  };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest(".comment-menu")) {
-        setOpenMenuId(null);
-      }
-    };
-
-    document.addEventListener("click", handleClickOutside);
-    return () => document.removeEventListener("click", handleClickOutside);
-  }, []);
-
-  const handleReply = async (parentId: string) => {
-    if (!reply.trim() || !user) return;
-
-    const originalReply = reply;
-    setReply("");
-    setReplyingTo(null);
-
-    const optimisticReply: LocalCommentWithProfile = {
-      id: `optimistic-${Date.now()}`,
-      post_id: postId,
-      user_id: user.id,
-      content: originalReply,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      parent_id: parentId,
-      profile: {
-        id: user.id,
-        full_name: user.user_metadata?.full_name || "User",
-        username: user.user_metadata?.username || "user",
-        avatar_url: user.user_metadata?.avatar_url || "",
-      },
-    };
-
-    setComments((prev) => [optimisticReply, ...prev]);
-    setTotalCommentsCount((prev) => prev + 1);
-
-    try {
-      const { error } = await socialApi.comments.insert({
-        user_id: user.id,
-        post_id: postId,
-        content: originalReply,
-        parent_id: parentId,
-      });
-
-      if (error) throw error;
-      await refreshComments();
-    } catch (error) {
-      console.error("Failed to post reply:", error);
-      // Revert optimistic update on failure
-      setComments((prev) => prev.filter((c) => c.id !== optimisticReply.id));
-      setTotalCommentsCount((prev) => prev - 1);
-      setReply(originalReply);
-      setReplyingTo(parentId); // Re-open reply input
-    }
-  };
-
-  const handleEdit = async (commentId: string) => {
+  const handleEdit = async () => {
     if (!editContent.trim() || !user) return;
-    await socialApi.comments.updateIfAuthor(commentId, user.id, {
+    await socialApi.comments.updateIfAuthor(comment.id, user.id, {
       content: editContent,
       updated_at: new Date().toISOString(),
     });
@@ -313,168 +338,12 @@ function CommentList({
     await refreshComments();
   };
 
-  const handleDelete = async (commentId: string) => {
+  const handleDelete = async () => {
     if (!user) return;
-    await socialApi.comments.deleteIfAuthor(commentId, user.id);
+    await socialApi.comments.deleteIfAuthor(comment.id, user.id);
     await refreshComments();
   };
 
-  const toggleReplies = (commentId: string) => {
-    setExpandedReplies((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(commentId)) {
-        newSet.delete(commentId);
-      } else {
-        newSet.add(commentId);
-      }
-      return newSet;
-    });
-  };
-
-  const toggleMenu = (commentId: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    setOpenMenuId(openMenuId === commentId ? null : commentId);
-  };
-
-  const getReplies = (commentId: string) => {
-    return allComments.filter((c) => c.parent_id === commentId);
-  };
-
-  const displayComments = comments.filter(
-    (comment) => comment.parent_id === parentId
-  );
-
-  // if (!displayComments.length)
-  //   return <div className="text-gray-500">No comments yet.</div>;
-
-  return (
-    <ul>
-      {displayComments.map((comment) => {
-        const replies = getReplies(comment.id);
-        const shownCount = repliesShownMap[comment.id] ?? DEFAULT_REPLIES_SHOWN;
-        const shownReplies = replies.slice(0, shownCount);
-        const hasMoreReplies = replies.length > shownCount;
-        return (
-          <li key={comment.id} className="mb-2">
-            <CommentItem
-              comment={comment}
-              user={user}
-              formatTime={formatTime}
-              setReplyingTo={setReplyingTo}
-              setReply={setReply}
-              toggleMenu={toggleMenu}
-              openMenuId={openMenuId}
-              setOpenMenuId={setOpenMenuId}
-              setEditingComment={setEditingComment}
-              setEditContent={setEditContent}
-              handleDelete={handleDelete}
-              router={router}
-              allUsers={allComments.map((c) => c.profile)}
-              editingComment={editingComment}
-              editContent={editContent}
-              handleEdit={handleEdit}
-            />
-            {replyingTo === comment.id && (
-              <div className="ml-8 flex gap-2 mt-1">
-                <CommentInput
-                  value={reply}
-                  onChange={setReply}
-                  onSend={() => handleReply(comment.id)}
-                />
-                <button
-                  onClick={() => {
-                    setReply("");
-                    setReplyingTo(null);
-                  }}
-                  className="text-xs text-gray-500 mb-3"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-            {replies.length > 0 && shownCount === 0 && (
-              <button
-                className="text-xs text-blue-500 mt-1 ml-8"
-                onClick={() =>
-                  setRepliesShownMap((prev) => ({
-                    ...prev,
-                    [comment.id]: 2,
-                  }))
-                }
-              >
-                Show {replies.length}{" "}
-                {replies.length === 1 ? "reply" : "replies"}
-              </button>
-            )}
-            {shownCount > 0 && (
-              <div className="ml-5">
-                <CommentList
-                  comments={shownReplies}
-                  allComments={allComments}
-                  postId={postId}
-                  refreshComments={refreshComments}
-                  router={router}
-                  setComments={setComments}
-                  setTotalCommentsCount={setTotalCommentsCount}
-                  parentId={comment.id}
-                />
-                {hasMoreReplies && (
-                  <button
-                    className="text-xs text-blue-500 mt-1"
-                    onClick={() =>
-                      setRepliesShownMap((prev) => ({
-                        ...prev,
-                        [comment.id]: shownCount + 2,
-                      }))
-                    }
-                  >
-                    Show more replies
-                  </button>
-                )}
-              </div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function CommentItem({
-  comment,
-  user,
-  formatTime,
-  setReplyingTo,
-  setReply,
-  toggleMenu,
-  openMenuId,
-  setOpenMenuId,
-  setEditingComment,
-  setEditContent,
-  handleDelete,
-  router,
-  allUsers,
-  editingComment,
-  editContent,
-  handleEdit,
-}: {
-  comment: any;
-  user: any;
-  formatTime: any;
-  setReplyingTo: any;
-  setReply: any;
-  toggleMenu: any;
-  openMenuId: any;
-  setOpenMenuId: any;
-  setEditingComment: any;
-  setEditContent: any;
-  handleDelete: any;
-  router: any;
-  allUsers: PostProfile[];
-  editingComment: any;
-  editContent: any;
-  handleEdit: any;
-}) {
   const renderContentWithMentions = (content: string) => {
     const parts: React.ReactNode[] = [];
     const regex = /@([a-zA-Z0-9_]+)/g;
@@ -491,9 +360,9 @@ function CommentItem({
         parts.push(content.substring(lastIndex, startIndex));
       }
 
-      const mentionedUser = allUsers.find(
-        (u: any) => u.username === username || u.full_name === username
-      );
+      const mentionedUser = allComments.find(
+        (c) => c.profile?.username === username || c.profile?.full_name === username
+      )?.profile;
 
       if (mentionedUser) {
         parts.push(
@@ -509,7 +378,11 @@ function CommentItem({
           </span>
         );
       } else {
-        parts.push(mention);
+        parts.push(
+          <span key={startIndex} className="text-blue-500">
+            {mention}
+          </span>
+        );
       }
       lastIndex = endIndex;
     }
@@ -521,118 +394,132 @@ function CommentItem({
   };
 
   return (
-    <>
-      <div className="flex items-center gap-2">
-        <div
-          className="flex items-center gap-2 cursor-pointer"
-          onClick={(e) => {
-            e.stopPropagation();
-            router.push(`/profile/${comment.profile.id}` as any);
-          }}
-        >
-          <Image
-            src={
-              comment.profile?.avatar_url ||
-              "https://avatars.dicebear.com/api/identicon/" +
-                comment.user_id +
-                ".svg"
-            }
-            alt={comment.profile?.full_name || ""}
-            width={24}
-            height={24}
-            className="rounded-full"
-          />
-          <span className="font-medium">
+    <div className={`flex gap-3 ${comment.isReply ? 'pl-6' : ''}`}>
+      <div 
+        className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 cursor-pointer border border-gray-200"
+        onClick={() => router.push(`/profile/${comment.profile.id}` as any)}
+      >
+        <Image
+          src={
+            comment.profile?.avatar_url ||
+            `https://avatars.dicebear.com/api/identicon/${comment.user_id}.svg`
+          }
+          alt={comment.profile?.full_name || ""}
+          width={32}
+          height={32}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        {/* Reply indicator */}
+        {comment.isReply && comment.directParent && (
+          <span className="text-gray-500 text-xs">
+            Replying to{" "}
+            <span className="text-blue-500">
+              @{comment.directParent.profile?.username || comment.directParent.profile?.full_name}
+            </span>
+          </span>
+        )}
+        
+        <div className="flex items-center gap-2 flex-wrap">
+          <span
+            className="font-medium cursor-pointer hover:underline"
+            onClick={() => router.push(`/profile/${comment.profile.id}` as any)}
+          >
             {comment.profile?.full_name || comment.profile?.username || "User"}
           </span>
-        </div>
-        <span className="text-gray-500 text-xs">
-          {formatTime(
-            comment.updated_at !== comment.created_at
-              ? comment.updated_at
-              : comment.created_at
-          )}
-        </span>
-        {comment.updated_at !== comment.created_at && (
-          <span className="text-gray-400 text-xs italic">(edited)</span>
-        )}
-        <button
-          className="ml-2 text-xs text-blue-500"
-          onClick={() => {
-            setReplyingTo(comment.id);
-            setReply(
-              `@${
-                comment.profile?.username ||
-                comment.profile?.full_name ||
-                "user"
-              } `
-            );
-          }}
-        >
-          Reply
-        </button>
-        {user && user.id === comment.user_id && (
-          <div className="relative group comment-menu">
-            <button
-              className="ml-2 text-gray-500 hover:text-gray-700"
-              onClick={(e) => toggleMenu(comment.id, e)}
-            >
-              <MoreVertical size={16} />
-            </button>
-            {openMenuId === comment.id && (
-              <div className="absolute right-0 mt-1 w-32 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                <button
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingComment(comment.id);
-                    setEditContent(comment.content);
-                    setOpenMenuId(null);
-                  }}
-                >
-                  <Edit2 size={14} /> Edit
-                </button>
-                <button
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center gap-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(comment.id);
-                    setOpenMenuId(null);
-                  }}
-                >
-                  <Trash2 size={14} /> Delete
-                </button>
-              </div>
+          <span className="text-gray-500 text-xs">
+            {formatTime(
+              comment.updated_at !== comment.created_at
+                ? comment.updated_at
+                : comment.created_at
             )}
+          </span>
+          {comment.updated_at !== comment.created_at && (
+            <span className="text-gray-400 text-xs italic">(edited)</span>
+          )}
+        </div>
+        
+        {editingComment === comment.id ? (
+          <div className="mt-1">
+            <input
+              type="text"
+              className="w-full text-sm border border-gray-300 rounded px-2 py-1"
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleEdit()}
+            />
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={handleEdit}
+                className="text-xs text-blue-500"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setEditingComment(null);
+                  setEditContent("");
+                }}
+                className="text-xs text-gray-500"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
+        ) : (
+          <p className="text-sm">{renderContentWithMentions(comment.content)}</p>
         )}
-      </div>
-      {editingComment === comment.id ? (
-        <div className="ml-8 mt-1">
-          <CommentInput
-            value={editContent}
-            onChange={setEditContent}
-            onSend={() => handleEdit(comment.id)}
-          />
+        
+        <div className="flex items-center gap-3 mt-1">
           <button
-            onClick={() => {
-              setEditingComment(null);
-              setEditContent("");
-            }}
-            className="text-xs text-gray-500 mt-1"
+            className="text-xs text-gray-500 hover:text-blue-500"
+            onClick={() => onReplyClick(comment.id, comment.profile?.username || comment.profile?.full_name || "User")}
           >
-            Cancel
+            Reply
           </button>
+          
+          {user && user.id === comment.user_id && (
+            <div className="relative comment-menu">
+              <button
+                className="text-gray-500 hover:text-gray-700"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenuId(openMenuId === comment.id ? null : comment.id);
+                }}
+              >
+                <MoreVertical size={14} />
+              </button>
+              {openMenuId === comment.id && (
+                <div className="absolute left-0 top-5 w-28 bg-white rounded-md shadow-lg z-10 border border-gray-200">
+                  <button
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingComment(comment.id);
+                      setEditContent(comment.content);
+                      setOpenMenuId(null);
+                    }}
+                  >
+                    <Edit2 size={12} /> Edit
+                  </button>
+                  <button
+                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-gray-100 flex items-center gap-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete();
+                      setOpenMenuId(null);
+                    }}
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="ml-8">
-          {renderContentWithMentions(comment.content)}
-          {/* {comment.updated_at !== comment.created_at && (
-            <span className="text-gray-400 text-xs italic ml-2">(edited)</span>
-          )} */}
-        </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -640,19 +527,24 @@ export function CommentInput({
   value,
   onChange,
   onSend,
+  inputRef: externalInputRef,
+  placeholder = "Add a comment...",
 }: {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
+  inputRef?: React.RefObject<HTMLInputElement>;
+  placeholder?: string;
 }) {
   const [showEmoji, setShowEmoji] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalInputRef = useRef<HTMLInputElement>(null);
+  const inputRefToUse = externalInputRef || internalInputRef;
 
   const handleEmojiSelect = (emoji: { native?: string }) => {
     onChange(value + (emoji.native || ""));
     setShowEmoji(false);
-    if (inputRef.current) {
-      inputRef.current.focus();
+    if (inputRefToUse.current) {
+      inputRefToUse.current.focus();
     }
   };
 
@@ -677,9 +569,9 @@ export function CommentInput({
         )}
         <input
           type="text"
-          ref={inputRef}
+          ref={inputRefToUse}
           className="flex-1 w-full outline-none border-none bg-transparent placeholder-gray-400 text-sm"
-          placeholder="Add a comment..."
+          placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
@@ -696,7 +588,6 @@ export function CommentInput({
           onClick={onSend}
           disabled={!value.trim()}
         >
-          {/* <Send size={20} /> */}
           Send
         </button>
       </div>

@@ -302,6 +302,53 @@ export const socialApi = {
 
     deletePost: async (postId: string, userId: string) => {
       // Only allow deleting if the user is the author
+      // First verify the user owns the post
+      const { data: post, error: checkError } = await supabase
+        .from("posts")
+        .select("id")
+        .eq("id", postId)
+        .eq("user_id", userId)
+        .single();
+
+      if (checkError || !post) {
+        return { data: null, error: checkError || new Error("Post not found or unauthorized") };
+      }
+
+      // Delete related records first to avoid foreign key constraint violations
+      // 1. Delete saved_post records
+      await supabase
+        .from("saved_post")
+        .delete()
+        .eq("post_id", postId);
+
+      // 2. Delete likes
+      await supabase
+        .from("likes")
+        .delete()
+        .eq("post_id", postId);
+
+      // 3. Delete comments (this will cascade to replies if there's a foreign key)
+      // First delete all replies (comments with parent_id pointing to comments of this post)
+      const { data: comments } = await supabase
+        .from("comments")
+        .select("id")
+        .eq("post_id", postId);
+
+      if (comments && comments.length > 0) {
+        const commentIds = comments.map(c => c.id);
+        // Delete replies to these comments
+        await supabase
+          .from("comments")
+          .delete()
+          .in("parent_id", commentIds);
+        // Delete the comments themselves
+        await supabase
+          .from("comments")
+          .delete()
+          .eq("post_id", postId);
+      }
+
+      // 4. Now delete the post itself
       return supabase
         .from("posts")
         .delete()

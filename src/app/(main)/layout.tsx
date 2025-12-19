@@ -6,7 +6,13 @@ import { RouteRemember } from "@/components/RouteRemember";
 import { FiMessageSquare } from "react-icons/fi";
 import { usePathname } from "next/navigation";
 
-export default function MainLayout({ children }: { children: React.ReactNode }) {
+export default function MainLayout({ 
+  children,
+  modal,
+}: { 
+  children: React.ReactNode;
+  modal: React.ReactNode;
+}) {
   const pathname = usePathname();
   const isMessengerScreen = pathname?.startsWith("/messenger");
 
@@ -14,6 +20,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     <>
       <RouteRemember />
       {children}
+      {modal}
       <BottomNav />
       <div className="lg:hidden">
         <FloatingQuickSettings />
