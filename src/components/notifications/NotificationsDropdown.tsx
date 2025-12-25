@@ -29,6 +29,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useRouter } from 'next/navigation';
+import { usePostModal } from '@/contexts/PostModalProvider';
 
 interface Notification {
   id: string;
@@ -55,6 +56,7 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
   onMarkAllAsRead,
 }) => {
   const router = useRouter();
+  const { openPost } = usePostModal();
   
   // Show only recent 5 notifications in dropdown
   const recentNotifications = notifications.slice(0, 5);
@@ -193,8 +195,23 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
       onMarkAsRead(notification.id);
     }
     
-    // Navigate to related page
-    const url= getNotificationUrl(notification);
+    const data = notification.data as any;
+    
+    // Handle post-related notifications with global modal
+    if (notification.type === 'post_like' || 
+        notification.type === 'post_comment' || 
+        notification.type === 'new_post') {
+      const postId = data?.post_id;
+      if (postId) {
+        // For comment notifications, pass commentId to scroll to that comment
+        const commentId = notification.type === 'post_comment' ? data?.comment_id : undefined;
+        openPost(postId, commentId);
+        return;
+      }
+    }
+    
+    // For other notification types, navigate normally
+    const url = getNotificationUrl(notification);
     router.push(url as any);
   };
 

@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import useSWR from "swr";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import MessageInput from "./MessageInput";
@@ -114,20 +115,17 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
   const { user } = useAuth();
   useOnlineStatus(user?.id);
   const router = useRouter();
+  const [hydrated, setHydrated] = useState(false);
   const [activeConversation, setActiveConversation] = useState<string | null>(
     initialUserId || null
   );
   const [typing, setTyping] = useState(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showConversationList, setShowConversationList] = useState(!isMobile);
+  const [showConversationList, setShowConversationList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [newMessageContent, setNewMessageContent] = useState("");
-  const [loadingConversations, setLoadingConversations] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(false);
   const lastMessageDateRef = useRef<Date | null>(null);
   const [inputFooterHeight, setInputFooterHeight] = useState(56);
   const inputFooterRef = useRef<HTMLDivElement>(null);
@@ -136,6 +134,156 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
   const [externalProfile, setExternalProfile] = useState<UserProfile | null>(
     null
   );
+
+  // Helper function for checking if user is online
+  const isUserOnline = useCallback((lastSeen: string | null) => {
+    if (!lastSeen) return false;
+    const seen = new Date(lastSeen.endsWith("Z") ? lastSeen : lastSeen + "Z");
+    const now = new Date();
+    return now.getTime() - seen.getTime() < 60 * 1000;
+  }, []);
+
+  // SWR Fetchers
+  const fetchConversationsData = useCallback(async (): Promise<Conversation[]> => {
+    if (!user?.id) return [];
+    const { data, error } = await fetchConversations(user.id);
+    if (error) throw error;
+
+    const localConversations: Conversation[] = (
+      data as ConversationRpcRow[]
+    ).map((conv) => ({
+      id: conv.user_id,
+      user_id: conv.user_id,
+      name: conv.full_name || conv.username || "Unknown User",
+      avatar: conv.avatar_url || conv.full_name?.[0]?.toUpperCase() || conv.username?.[0]?.toUpperCase() || "U",
+      avatar_url: conv.avatar_url,
+      lastMessage: conv.last_message || "",
+      lastMessageType: conv.last_message_type || "",
+      timestamp: conv.last_message_time
+        ? new Date(conv.last_message_time)
+        : new Date(),
+      unread: conv.unread_count || 0,
+      online: isUserOnline(conv.last_seen),
+      full_name: conv.full_name,
+      username: conv.username,
+    }));
+
+    // Fetch additional profile information if needed
+    const uniqueUserIds = Array.from(
+      new Set(localConversations.map((c) => c.user_id))
+    );
+    const profiles = await Promise.all(
+      uniqueUserIds.map(async (id) => {
+        try {
+          const { data } = await socialApi.profiles.getById(id);
+          return data;
+        } catch (error) {
+          console.error(`Error fetching profile for user ${id}:`, error);
+          return null;
+        }
+      })
+    );
+
+    // Merge profile information into localConversations
+    return localConversations.map((conv) => {
+      const profile = profiles.find((p) => p?.id === conv.user_id);
+      return {
+        ...conv,
+        avatar:
+          profile?.avatar_url ||
+          conv.avatar ||
+          conv.full_name?.[0]?.toUpperCase() ||
+          conv.username?.[0]?.toUpperCase() ||
+          "U",
+        name: profile?.full_name || conv.full_name || conv.username || "Unknown User",
+        full_name:
+          profile?.full_name || conv.full_name || conv.username || "Unknown User",
+        username: profile?.username || conv.username || "Unknown User",
+      };
+    });
+  }, [user?.id, isUserOnline]);
+
+  const fetchMessagesData = useCallback(async () => {
+    if (!activeConversation || !user?.id) return [];
+    const { data, error } = await fetchMessages({
+      user1: user.id,
+      user2: activeConversation,
+    });
+    if (error) throw error;
+
+    return (data as Database["public"]["Tables"]["messages"]["Row"][]).map((msg) => ({
+      id: msg.id,
+      sender_id: msg.sender_id,
+      receiver_id: msg.receiver_id,
+      content: msg.content,
+      message_type: msg.message_type,
+      created_at: msg.created_at || new Date().toISOString(),
+      text: msg.content || undefined,
+      sender: msg.sender_id === user.id ? "user" : "other",
+      timestamp: new Date(msg.created_at || Date.now()),
+      read: false,
+      sent: true,
+      delivered: true,
+      media: undefined,
+      reactions: undefined,
+    })) as Message[];
+  }, [activeConversation, user?.id]);
+
+  // SWR Hooks
+  const {
+    data: conversations = [],
+    isLoading: loadingConversations,
+    mutate: mutateConversations,
+  } = useSWR<Conversation[]>(
+    user?.id ? ['conversations', user.id] : null,
+    fetchConversationsData,
+    {
+      revalidateOnFocus: false,
+      revalidateIfStale: false,
+      dedupingInterval: 2000,
+    }
+  );
+
+  const {
+    data: messages = [],
+    isLoading: loadingMessages,
+    mutate: mutateMessages,
+  } = useSWR<Message[]>(
+    activeConversation && user?.id ? ['messages', user.id, activeConversation] : null,
+    fetchMessagesData,
+    {
+      revalidateOnFocus: false,
+      revalidateIfStale: false,
+      dedupingInterval: 2000,
+    }
+  );
+
+  // Ensure the URL param is always honored (e.g., on hard refresh)
+  useEffect(() => {
+    if (initialUserId) {
+      setActiveConversation(initialUserId);
+    }
+  }, [initialUserId]);
+
+  // On mobile, hide the recent list when landing directly on /messenger/[id] (e.g., after refresh)
+  useEffect(() => {
+    if (isMobile && initialUserId) {
+      setShowConversationList(false);
+     
+    }
+  }, [isMobile, initialUserId]);
+
+  // Wait for client hydration to avoid flashing sidebar on mobile
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
+
+  // On mobile, if no active conversation and no deep-link target, show the recent list
+  useEffect(() => {
+    if (hydrated && isMobile && !activeConversation && !initialUserId) {
+      setShowConversationList(true);
+    }
+  }, [hydrated, isMobile, activeConversation, initialUserId]);
 
   useEffect(() => {
     // Removed theme preference check from localStorage
@@ -164,153 +312,50 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     };
   }, [activeConversation, user]);
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  };
-
-  const isUserOnline = (lastSeen: string | null) => {
-    if (!lastSeen) return false;
-
-    // Ensure lastSeen is treated as UTC
-    const seen = new Date(lastSeen.endsWith("Z") ? lastSeen : lastSeen + "Z");
-    const now = new Date();
-
-    const diff = now.getTime() - seen.getTime();
-    const diffSeconds = Math.floor(diff / 1000);
-
-    return diff < 60 * 1000;
-  };
-
-  useEffect(() => {
-    const fetchConvos = async () => {
-      if (!user) return;
-      setLoadingConversations(true);
-      try {
-        const { data, error } = await fetchConversations(user.id);
-        if (error) throw error;
-
-        const localConversations: Conversation[] = (
-          data as ConversationRpcRow[]
-        ).map((conv) => ({
-          id: conv.user_id,
-          user_id: conv.user_id,
-          name: conv.full_name || conv.username || "Unknown User",
-          avatar: conv.avatar_url || conv.full_name?.[0]?.toUpperCase() || conv.username?.[0]?.toUpperCase() || "U",
-          avatar_url: conv.avatar_url,
-          lastMessage: conv.last_message || "",
-          lastMessageType: conv.last_message_type || "",
-          timestamp: conv.last_message_time
-            ? new Date(conv.last_message_time)
-            : new Date(),
-          unread: conv.unread_count || 0,
-          online: isUserOnline(conv.last_seen),
-          full_name: conv.full_name,
-          username: conv.username,
-        }));
-
-        // Fetch additional profile information if needed
-        const uniqueUserIds = Array.from(
-          new Set(localConversations.map((c) => c.user_id))
-        );
-        const profiles = await Promise.all(
-          uniqueUserIds.map(async (id) => {
-            try {
-              const { data } = await socialApi.profiles.getById(id);
-              return data;
-            } catch (error) {
-              console.error(`Error fetching profile for user ${id}:`, error);
-              return null;
-            }
-          })
-        );
-
-        // Merge profile information into localConversations
-        const conversationsWithProfiles = localConversations.map((conv) => {
-          const profile = profiles.find((p) => p?.id === conv.user_id);
-          return {
-            ...conv,
-            avatar:
-              profile?.avatar_url ||
-              conv.avatar ||
-              conv.full_name?.[0]?.toUpperCase() ||
-              conv.username?.[0]?.toUpperCase() ||
-              "U",
-            name: profile?.full_name || conv.full_name || conv.username || "Unknown User",
-            full_name:
-              profile?.full_name || conv.full_name || conv.username || "Unknown User",
-            username: profile?.username || conv.username || "Unknown User",
-          };
-        });
-
-        setConversations(conversationsWithProfiles);
-      } catch (error) {
-        console.error("Error fetching conversations:", error);
-      } finally {
-        setLoadingConversations(false);
+  const scrollToBottom = useCallback(() => {
+    // Use requestAnimationFrame to ensure DOM is updated
+    requestAnimationFrame(() => {
+      // Try scrolling the ScrollArea viewport directly (more reliable)
+      if (scrollAreaRef.current) {
+        const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+        if (scrollContainer) {
+          scrollContainer.scrollTo({
+            top: scrollContainer.scrollHeight,
+            behavior: "smooth"
+          });
+        }
       }
-    };
+      
+      // Also try scrollIntoView as a fallback
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+      }
+    });
+  }, []);
 
-    fetchConvos();
-  }, [user]);
+  // Scroll to bottom when messages change and loading is complete
+  useEffect(() => {
+    if (!loadingMessages && messages.length > 0) {
+      // Use multiple attempts with increasing delays to ensure scroll works
+      // This handles cases where DOM might not be fully updated yet
+      const scrollAttempts = [100, 300, 500];
+      scrollAttempts.forEach((delay) => {
+        setTimeout(() => {
+          scrollToBottom();
+        }, delay);
+      });
+    }
+  }, [messages, loadingMessages, scrollToBottom]);
 
-  // --- Fetch Messages for Selected Conversation ---
+  // Handle initialUserId selection when conversations are loaded
   useEffect(() => {
     if (initialUserId && !activeConversation && conversations.length > 0) {
       handleSelectConversation(initialUserId);
-      return;
     }
+  }, [initialUserId, activeConversation, conversations.length]);
 
-    const getMessages = async () => {
-      if (!activeConversation || !user) {
-        setMessages([]);
-        return;
-      }
-      setLoadingMessages(true);
-      try {
-        const { data, error } = await fetchMessages({
-          user1: user.id,
-          user2: activeConversation,
-        }); // Use chat.ts function
-        if (error) throw error;
-
-        const localMessages: Message[] = (
-          data as Database["public"]["Tables"]["messages"]["Row"][]
-        ).map((msg) => ({
-          id: msg.id,
-          sender_id: msg.sender_id,
-          receiver_id: msg.receiver_id,
-          content: msg.content,
-          message_type: msg.message_type,
-          created_at: msg.created_at || new Date().toISOString(),
-          text: msg.content || undefined,
-          sender: msg.sender_id === user?.id ? "user" : "other",
-          timestamp: new Date(msg.created_at || Date.now()),
-          read: false,
-          sent: true,
-          delivered: true,
-          media: undefined,
-          reactions: undefined,
-        }));
-
-        setMessages(localMessages || []);
-      } catch (error) {
-        console.error("Error fetching messages:", error);
-        setMessages([]);
-      } finally {
-        setLoadingMessages(false);
-      }
-    };
-
-    getMessages();
-
-    // --- Setup Real-time Subscription ---
+  // --- Setup Real-time Subscription ---
+  useEffect(() => {
     if (!user?.id || !activeConversation) return;
     
     const messageSubscription = subscribeToMessages({
@@ -320,44 +365,52 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
         const typedMsg = msg as Database["public"]["Tables"]["messages"]["Row"] & {
           isDeleted?: boolean;
         };
+        
         if (typedMsg.isDeleted) {
-          setMessages((prevMessages) => {
-            const updatedMessages = prevMessages.filter(
-              (message) => message.id !== typedMsg.id
-            );
-
-            return updatedMessages;
-          });
+          // Update messages cache by removing deleted message
+          mutateMessages((currentMessages) => {
+            if (!currentMessages) return currentMessages;
+            return currentMessages.filter((message) => message.id !== typedMsg.id);
+          }, false);
         } else if (
           (typedMsg.sender_id === user?.id &&
             typedMsg.receiver_id === activeConversation) ||
           (typedMsg.sender_id === activeConversation && typedMsg.receiver_id === user?.id)
         ) {
-          setMessages((prevMessages) => [
-            ...prevMessages,
-            {
-              id: typedMsg.id,
-              sender_id: typedMsg.sender_id,
-              receiver_id: typedMsg.receiver_id,
-              content: typedMsg.content,
-              message_type: typedMsg.message_type,
-              created_at: typedMsg.created_at || new Date().toISOString(),
-              text: typedMsg.content || undefined,
-              sender: typedMsg.sender_id === user?.id ? "user" : "other",
-              timestamp: new Date(typedMsg.created_at || Date.now()),
-              read: false,
-              sent: true,
-              delivered: true,
-              media: undefined,
-              reactions: undefined,
-            },
-          ]);
+          const newMessage: Message = {
+            id: typedMsg.id,
+            sender_id: typedMsg.sender_id,
+            receiver_id: typedMsg.receiver_id,
+            content: typedMsg.content,
+            message_type: typedMsg.message_type,
+            created_at: typedMsg.created_at || new Date().toISOString(),
+            text: typedMsg.content || undefined,
+            sender: typedMsg.sender_id === user.id ? "user" : "other",
+            timestamp: new Date(typedMsg.created_at || Date.now()),
+            read: false,
+            sent: true,
+            delivered: true,
+            media: undefined,
+            reactions: undefined,
+          };
 
+          // Update messages cache by adding new message
+          mutateMessages((currentMessages) => {
+            if (!currentMessages) return [newMessage];
+            // Check if message already exists to avoid duplicates
+            if (currentMessages.some(m => m.id === newMessage.id)) {
+              return currentMessages;
+            }
+            return [...currentMessages, newMessage];
+          }, false);
+
+          // Update conversations cache
           const conversationToUpdateId =
-            typedMsg.sender_id === user?.id ? typedMsg.receiver_id : typedMsg.sender_id;
+            typedMsg.sender_id === user.id ? typedMsg.receiver_id : typedMsg.sender_id;
 
-          setConversations((prevConversations) =>
-            prevConversations.map((conv) =>
+          mutateConversations((currentConversations) => {
+            if (!currentConversations) return currentConversations;
+            return currentConversations.map((conv) =>
               conv.user_id === conversationToUpdateId
                 ? {
                     ...conv,
@@ -370,8 +423,8 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
                         : conv.unread,
                   }
                 : conv
-            )
-          );
+            );
+          }, false);
         }
       },
     });
@@ -379,7 +432,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     return () => {
       messageSubscription.unsubscribe();
     };
-  }, [activeConversation, user]); // Removed messages from dependency array
+  }, [activeConversation, user?.id, mutateMessages, mutateConversations]);
 
   const handleSendMessage = async (content: string, media: File[] = []) => {
     if ((!content.trim() && media.length === 0) || !user || !activeConversation)
@@ -437,34 +490,40 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
         activeConversation
       );
       if (profile) {
-        setConversations((prev) => [
-          {
-            id: profile.id,
-            user_id: profile.id,
-            name: profile.full_name || profile.username || "Unknown User",
-            avatar:
-              profile.avatar_url ??
-              (profile.full_name?.[0]?.toUpperCase() ||
-                profile.username?.[0]?.toUpperCase() ||
-                "U"),
-            avatar_url: profile.avatar_url,
-            lastMessage: content,
-            lastMessageType:
-              media.length > 0
-                ? media[0].type.startsWith("image/")
-                  ? "image"
-                  : media[0].type.startsWith("video/")
-                  ? "video"
-                  : "file"
-                : "text",
-            timestamp: new Date(),
-            unread: 0,
-            online: false,
-            full_name: profile.full_name,
-            username: profile.username,
-          },
-          ...prev,
-        ]);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem("userName", profile.full_name || "");
+        }
+        mutateConversations((prev) => {
+          if (!prev) return prev;
+          return [
+            {
+              id: profile.id,
+              user_id: profile.id,
+              name: profile.full_name || profile.username || "Unknown User",
+              avatar:
+                profile.avatar_url ??
+                (profile.full_name?.[0]?.toUpperCase() ||
+                  profile.username?.[0]?.toUpperCase() ||
+                  "U"),
+              avatar_url: profile.avatar_url,
+              lastMessage: content,
+              lastMessageType:
+                media.length > 0
+                  ? media[0].type.startsWith("image/")
+                    ? "image"
+                    : media[0].type.startsWith("video/")
+                    ? "video"
+                    : "file"
+                  : "text",
+              timestamp: new Date(),
+              unread: 0,
+              online: false,
+              full_name: profile.full_name,
+              username: profile.username,
+            },
+            ...prev,
+          ];
+        }, false);
       }
     }
   };
@@ -479,29 +538,10 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
       if (error) throw error;
       toast.success("Conversation history deleted.");
       setActiveConversation(null);
-      setMessages([]);
-      // Re-fetch conversations to update the list
-      const { data, error: fetchError } = await fetchConversations(user.id);
-      if (fetchError) throw fetchError;
-      const localConversations: Conversation[] = (
-        data as ConversationRpcRow[]
-      ).map((conv) => ({
-        id: conv.user_id,
-        user_id: conv.user_id,
-        name: conv.full_name || conv.username || "Unknown User",
-        avatar: conv.avatar_url || conv.full_name?.[0]?.toUpperCase() || conv.username?.[0]?.toUpperCase() || "U",
-        avatar_url: conv.avatar_url,
-        lastMessage: conv.last_message || "",
-        lastMessageType: conv.last_message_type || "",
-        timestamp: conv.last_message_time
-          ? new Date(conv.last_message_time)
-          : new Date(),
-        unread: conv.unread_count || 0,
-        online: isUserOnline(conv.last_seen),
-        full_name: conv.full_name,
-        username: conv.username,
-      }));
-      setConversations(localConversations);
+      // Clear messages cache
+      mutateMessages([], false);
+      // Revalidate conversations to get updated list
+      await mutateConversations();
     } catch (error) {
       console.error("Error deleting conversation history:", error);
       toast.error("Failed to delete conversation history.");
@@ -515,8 +555,9 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
   };
 
   const handleDeleteMedia = (messageId: string, mediaIndex: number) => {
-    setMessages((prevMessages) =>
-      prevMessages.map((msg) => {
+    mutateMessages((currentMessages) => {
+      if (!currentMessages) return currentMessages;
+      return currentMessages.map((msg) => {
         if (msg.id === messageId && msg.media) {
           const updatedMedia = [...msg.media];
           if (updatedMedia[mediaIndex]?.url) {
@@ -529,42 +570,39 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
           };
         }
         return msg;
-      })
-    );
+      });
+    }, false);
     toast.success("Media deleted");
   };
 
   const handleUnsendMessage = (messageId: string) => {
     // Remove the message from the messages array
-    setMessages((prevMessages) =>
-      prevMessages.filter((msg) => msg.id !== messageId)
-    );
-
-    // Update the conversation\'s last message if needed
-    if (activeConversation) {
-      const remainingMessages = messages.filter((msg) => msg.id !== messageId);
-      const lastMsg =
-        remainingMessages.length > 0
-          ? remainingMessages[remainingMessages.length - 1]
-          : null;
-
-      if (lastMsg) {
-        setConversations(
-          conversations.map((conv) =>
-            conv.id === activeConversation
+    mutateMessages((currentMessages) => {
+      if (!currentMessages) return currentMessages;
+      const filtered = currentMessages.filter((msg) => msg.id !== messageId);
+      
+      // Update the conversation's last message if needed
+      if (activeConversation && filtered.length > 0) {
+        const lastMsg = filtered[filtered.length - 1];
+        mutateConversations((currentConversations) => {
+          if (!currentConversations) return currentConversations;
+          return currentConversations.map((conv) =>
+            conv.user_id === activeConversation
               ? {
                   ...conv,
-                  lastMessage: lastMsg.text || "",
+                  lastMessage: lastMsg.content || "",
                   lastMessageType: lastMsg.message_type || "",
                   timestamp: lastMsg.timestamp,
                 }
               : conv
-          )
-        );
+          );
+        }, false);
       }
-    }
+      
+      return filtered;
+    }, false);
 
-    toast.success("Message unsent"); // Show success toast after state update
+    toast.success("Message unsent");
   };
 
   const handleSelectConversation = (id: string) => {
@@ -573,19 +611,42 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
       setShowConversationList(false);
     }
 
-    // Mark unread messages as read
-    setConversations(
-      conversations.map((conv) =>
-        conv.user_id === id ? { ...conv, unread: 0 } : conv
-      )
-    );
+    // Persist selected user's name for header/avatar fallback on refresh
+    const selectedConv = conversations.find((conv) => conv.user_id === id);
+    const displayName =
+      selectedConv?.full_name ||
+      selectedConv?.username ||
+      selectedConv?.name ||
+      "User";
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem("userName", displayName);
+    }
 
-    // Force scroll to bottom when changing conversations
-    setTimeout(scrollToBottom, 100);
+    // Mark unread messages as read
+    mutateConversations((currentConversations) => {
+      if (!currentConversations) return currentConversations;
+      return currentConversations.map((conv) =>
+        conv.user_id === id ? { ...conv, unread: 0 } : conv
+      );
+    }, false);
+
+    // Note: Scrolling to bottom is handled by useEffect that watches messages and loadingMessages
+    // This ensures messages are loaded before scrolling
   };
 
   const toggleConversationList = () => {
-    setShowConversationList(!showConversationList);
+    if (isMobile && activeConversation) {
+      // On mobile, when in a conversation, back button should:
+      // 1. Clear active conversation
+      // 2. Navigate to /messenger (without userId)
+      // 3. Show conversation list
+      setActiveConversation(null);
+      router.push('/messenger');
+      setShowConversationList(true);
+    } else {
+      // Desktop or when no active conversation, just toggle
+      setShowConversationList(!showConversationList);
+    }
   };
 
   const selectedConversationProfile = conversations.find(
@@ -597,6 +658,11 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     if (userId && !selectedConversationProfile) {
       socialApi.profiles.getById(userId).then(({ data }) => {
         if (data) {
+          const displayName =
+            data.full_name || data.username || (typeof window !== 'undefined' ? sessionStorage.getItem("userName") : null) || "User";
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem("userName", displayName);
+          }
           setExternalProfile({
             id: data.id,
             user_id: data.id,
@@ -640,7 +706,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
       style={{ maxHeight: "100vh" }}
     >
       {/* Conversations Sidebar */}
-      {(showConversationList || !isMobile) && (
+      {hydrated && (showConversationList || !isMobile) && (
         <div
           className={
             `${
@@ -661,9 +727,11 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
 
       {/* Chat Area */}
       <div
-        className={`${isMobile && showConversationList ? "hidden" : "flex"} ${
+        className={`${
+          isMobile && showConversationList && !activeConversation ? "hidden" : "flex"
+        } ${
           isMobile ? "w-full" : "w-2/3"
-        } flex-col h-full relative`}
+        } flex-col h-full relative max-[764px]:w-full`}
       >
         {activeConversation ? (
           <>
@@ -685,7 +753,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
                   : {}
               }
             >
-              <div className="flex items-center">
+              <div className="flex items-center w-full">
                 {isMobile && (
                   <button
                     onClick={toggleConversationList}
@@ -711,12 +779,18 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
                   >
                     <AvatarImage
                       src={profile?.avatar_url || undefined}
-                      alt={(profile?.full_name?.[0]?.toUpperCase() || profile?.username?.[0]?.toUpperCase() || "U")}
+                      alt={
+                        profile?.full_name?.[0]?.toUpperCase() ||
+                        profile?.username?.[0]?.toUpperCase() ||
+                        (typeof window !== 'undefined' ? sessionStorage.getItem("userName")?.[0]?.toUpperCase() : null) ||
+                        "U"
+                      }
                     />
                     <AvatarFallback>
                       {" "}
                       {profile?.full_name?.[0]?.toUpperCase() ||
                         profile?.username?.[0]?.toUpperCase() ||
+                        (typeof window !== 'undefined' ? sessionStorage.getItem("userName")?.[0]?.toUpperCase() : null) ||
                         "U"}
                     </AvatarFallback>
                   </Avatar>
@@ -726,7 +800,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
                         `font-semibold ` + `text-gray-800 dark:text-white`
                       }
                     >
-                      {profile?.full_name || profile?.username || userId}
+                      {profile?.full_name || profile?.username || (typeof window !== 'undefined' ? sessionStorage.getItem("userName") : null) || userId}
                     </h3>
                     <span
                       className={

@@ -188,7 +188,7 @@ const VendorDashboard = () => {
                 <p className="text-red-700">{vendorRegistration.rejection_reason}</p>
                 <Button 
                   className="mt-3"
-                  onClick={() => window.location.href = '/vendor/reapply'}
+                  onClick={() => window.location.href = '/settings'}
                 >
                   Reapply for Registration
                 </Button>

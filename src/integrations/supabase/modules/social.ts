@@ -139,8 +139,7 @@ export const socialApi = {
       supabase
         .from("posts")
         .select(
-          `
-      *,
+          `*,
       profile:user_id (
         id,
         username,

@@ -8,11 +8,13 @@ import TrendingPosts from "@/components/social/TrendingPosts";
 import LeftSidebar from "@/components/social/LeftSidebar";
 import RightSidebar from "@/components/social/RightSidebar";
 import MobileSuggestedUsers from "@/components/social/MobileSuggestedUsers";
+import { usePostModal } from "@/contexts/PostModalProvider";
 
 const Social = () => {
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { openPost } = usePostModal();
 
   useEffect(() => {
     window.scroll(0, 0);
@@ -62,6 +64,10 @@ const Social = () => {
                   <MobileSuggestedUsers />
                 </div>
               }
+              onOpenPost={(id) => {
+                sessionStorage.setItem("modalScrollPosition", String(window.scrollY));
+                openPost(id);
+              }}
             />
           </div>
 

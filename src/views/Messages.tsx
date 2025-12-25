@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePostModal } from "@/contexts/PostModalProvider";
 import {
   sendMessage,
   fetchMessages,
@@ -51,6 +52,7 @@ const Messages = () => {
   const { id: urlId } = useParams();
   const urlIdParam = Array.isArray(urlId) ? urlId[0] : urlId ?? null;
   const { user } = useAuth();
+  const { openPost } = usePostModal();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
@@ -347,7 +349,10 @@ const Messages = () => {
     return (
       <div
         className="cursor-pointer bg-white text-black rounded-lg p-3 shadow hover:bg-gray-100 transition w-60"
-        onClick={() => (window.location.href = `/social/post/${postId}`)}
+        onClick={() => {
+          sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+          openPost(postId);
+        }}
       >
         <img
           src={image}

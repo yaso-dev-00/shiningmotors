@@ -33,13 +33,14 @@ import {
   socialApi,
   PostWithProfile,
 } from "@/integrations/supabase/modules/social";
+import { usePostModal } from "@/contexts/PostModalProvider";
 import clsx from "clsx";
-import Image from "next/image";
 export interface Media {
   type?: string;
   url: string;
   name?: string;
 }
+import Image from "next/image";
 
 interface Message {
   type?: string;
@@ -64,6 +65,7 @@ interface MessageBubbleProps {
 const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
   ({ message, onDeleteMedia, onUnsendMessage }, ref) => {
     const isUser = message.sender === "user";
+    const { openPost } = usePostModal();
 
     const [videoDialogOpen, setVideoDialogOpen] = useState(false);
     const [selectedVideo, setSelectedVideo] = useState<{
@@ -248,7 +250,7 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
                 "max-w-[75%] relative shadow-sm rounded-tl-lg flex min-w-[130px] rounded-tr-lg",
                 isUser ? "rounded-lg" : "rounded-lg",
                 {
-                  "bg-blue-500 text-white p-0 pb-4":
+                  "text-gray-800 p-0 pb-4":
                     isUser &&
                     message.message_type !== "image" &&
                     message.message_type !== "video",
@@ -262,19 +264,19 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
 
               {/* Media display or Post Preview */}
               {message && message.message_type && (
-                <div className="mt-2">
+                <div className="mt-2 w-full">
                   {/* Image Preview */}
                   {message.message_type === "image" && message.content && (
                     <div
-                      className="relative cursor-pointer max-w-[250px] aspect-[4/3]"
+                      className="relative cursor-pointer max-w-[250px]"
                       onClick={() => handleOpenImage(message.content, 0)}
                     >
                       <Image
                         src={message.content}
                         alt="Image preview"
-                        fill
-                        className="object-cover rounded"
-                        sizes="(min-width: 768px) 250px, 90vw"
+                        height={200}
+                        width={200}
+                        className="w-full h-auto max-h-[300px]  object-cover rounded"
                       />
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -304,27 +306,24 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
                           align={isUser ? "start" : "end"}
                           className="w-56 z-50"
                         >
-                          {(((message.message_type as unknown as string) === "image") ||
-                            ((message.message_type as unknown as string) === "video")) &&
-                            message.content && (
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  handleDownload({
-                                    url: message.content,
-                                    type: message.message_type,
-                                    name: `message.${message.message_type}`,
-                                  });
-                                }}
-                                className="cursor-pointer"
-                              >
-                                Download {message.message_type}
-                              </DropdownMenuItem>
-                            )}
+                          {message.content && (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                handleDownload({
+                                  url: message.content,
+                                  type: message.message_type,
+                                  name: `message.${message.message_type}`,
+                                });
+                              }}
+                              className="cursor-pointer"
+                            >
+                              Download {message.message_type}
+                            </DropdownMenuItem>
+                          )}
 
                           {/* Unsend option (only for user's messages, not for posts) */}
                           {isUser &&
-                            onUnsendMessage &&
-                            (message.message_type as unknown as string) !== "media" && (
+                            onUnsendMessage && (
                               <DropdownMenuItem
                                 onClick={() => {
                                   handleUnsend();
@@ -383,27 +382,24 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
                           align={isUser ? "start" : "end"}
                           className="w-56 z-50"
                         >
-                          {(((message.message_type as unknown as string) === "image") ||
-                            ((message.message_type as unknown as string) === "video")) &&
-                            message.content && (
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  handleDownload({
-                                    url: message.content,
-                                    type: message.message_type,
-                                    name: `message.${message.message_type}`,
-                                  });
-                                }}
-                                className="cursor-pointer"
-                              >
-                                Download {message.message_type}
-                              </DropdownMenuItem>
-                            )}
+                          {message.content && (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                handleDownload({
+                                  url: message.content,
+                                  type: message.message_type,
+                                  name: `message.${message.message_type}`,
+                                });
+                              }}
+                              className="cursor-pointer"
+                            >
+                              Download {message.message_type}
+                            </DropdownMenuItem>
+                          )}
 
                           {/* Unsend option (only for user's messages, not for posts) */}
                           {isUser &&
-                            onUnsendMessage &&
-                            (message.message_type as unknown as string) !== "media" && (
+                            onUnsendMessage && (
                               <DropdownMenuItem
                                 onClick={() => {
                                   handleUnsend();
@@ -420,57 +416,208 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
 
                   {/* Post Preview */}
                   {message.message_type === "post" && message.content && (
-                    <div className="p-3 mt-2 rounded   dark:bg-gray-800 dark:border-gray-700">
+                    <div className="mt-2 w-full">
                       {loadingPost ? (
-                        <div className="text-sm text-gray-600">
-                          Loading post preview...
+                        <div className="p-4 flex items-center  justify-center">
+                          <div className="relative h-14 w-14">
+                            {/* Outer faint ring */}
+                            <div className="absolute inset-0 rounded-full border border-black/30" />
+                            {/* Rotating dot */}
+                            <div className="absolute inset-0 animate-spin">
+                              <div className="absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 rounded-full bg-black" />
+                            </div>
+                          </div>
                         </div>
                       ) : postDetails ? (
                         <>
-                          {/* Display first media if available */}
+                          {/* Display first media if available - styled like regular image/video messages */}
                           {postDetails.media_urls &&
                             postDetails.media_urls.length > 0 && (
-                              <div className="mb-2">
-                                {postDetails.media_urls[0].endsWith(".mp4") ||
-                                postDetails.media_urls[0].endsWith(".mov") ? (
-                                  <div className="relative max-w-[250px] h-[150px] bg-black cursor-pointer overflow-hidden rounded">
-                                    <video
-                                      src={postDetails.media_urls[0]}
-                                      className="w-full h-full object-cover"
-                                      controls={false}
-                                      preload="metadata"
-                                    />
-                                    <div className="absolute inset-0 flex items-center justify-center z-10">
-                                      <div className="w-8 h-8 bg-white/80 rounded-full flex items-center justify-center">
-                                        <Play className="h-4 w-4 text-gray-800" />
+                              <>
+                                {/* Video Preview - matches regular video message styling */}
+                                {(() => {
+                                  const firstMediaUrl = postDetails.media_urls[0];
+                                  const isVideo = firstMediaUrl?.endsWith(".mp4") || firstMediaUrl?.endsWith(".mov");
+                                  
+                                  return isVideo ? (
+                                    <div
+                                      className="relative max-w-[250px] h-auto mt-2 bg-black cursor-pointer overflow-hidden rounded"
+                                      onClick={() => handleOpenVideo(firstMediaUrl, 0)}
+                                    >
+                                      <div className="absolute inset-0 flex items-center justify-center z-10">
+                                        <div className="w-12 h-12 bg-white/80 rounded-full flex items-center justify-center">
+                                          <Play className="h-6 w-6 text-gray-800 ml-1" />
+                                        </div>
                                       </div>
+                                      <video
+                                        src={firstMediaUrl}
+                                        className="w-full h-full md:w-[400px] md:h-[300px] object-cover"
+                                        preload="metadata"
+                                      />
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <button
+                                            className={`absolute top-1 right-1 p-1 z-20 group-hover:opacity-100 focus:opacity-100 transition-opacity rounded-full bg-gray-100`}
+                                            aria-label="Message options"
+                                          >
+                                            <svg
+                                              xmlns="http://www.w3.org/2000/svg"
+                                              width="16"
+                                              height="16"
+                                              viewBox="0 0 24 24"
+                                              fill="none"
+                                              stroke="currentColor"
+                                              strokeWidth="2"
+                                              strokeLinecap="round"
+                                              strokeLinejoin="round"
+                                            >
+                                              <circle cx="12" cy="12" r="1" />
+                                              <circle cx="12" cy="5" r="1" />
+                                              <circle cx="12" cy="19" r="1" />
+                                            </svg>
+                                          </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent
+                                          align={isUser ? "start" : "end"}
+                                          className="w-56 z-50"
+                                        >
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              handleDownload({
+                                                url: firstMediaUrl,
+                                                type: "video",
+                                                name: `post-video.mp4`,
+                                              });
+                                            }}
+                                            className="cursor-pointer"
+                                          >
+                                            Download video
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              if (message.content) {
+                                                openPost(message.content);
+                                              }
+                                            }}
+                                            className="cursor-pointer"
+                                          >
+                                            View Post
+                                          </DropdownMenuItem>
+                                          {isUser &&
+                                            onUnsendMessage && (
+                                              <DropdownMenuItem
+                                                onClick={() => {
+                                                  handleUnsend();
+                                                }}
+                                                className="cursor-pointer text-red-500 hover:text-red-600 focus:text-red-700"
+                                              >
+                                                Unsend message
+                                              </DropdownMenuItem>
+                                            )}
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
-                                  </div>
-                                ) : (
-                                  <div className="relative max-w-[250px] h-[150px]">
-                                    <Image
-                                      src={postDetails.media_urls[0]}
-                                      alt="Post media preview"
-                                      fill
-                                      className="object-cover rounded"
-                                      sizes="250px"
-                                    />
-                                  </div>
-                                )}
-                              </div>
+                                  ) : (
+                                    /* Image Preview - matches regular image message styling */
+                                    <div
+                                      className="relative cursor-pointer max-w-[250px]"
+                                      onClick={() => handleOpenImage(firstMediaUrl, 0)}
+                                    >
+                                      <Image
+                                        src={firstMediaUrl}
+                                        alt="Post media preview"
+                                        height={200}
+                                        width={200}
+                                        className="w-full h-auto max-h-[300px] object-cover rounded"
+                                      />
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <button
+                                            className={`absolute top-1 right-1 p-1 group-hover:opacity-100 focus:opacity-100 transition-opacity rounded-full text-gray-600 bg-gray-100`}
+                                            aria-label="Message options"
+                                          >
+                                            <svg
+                                              xmlns="http://www.w3.org/2000/svg"
+                                              width="16"
+                                              height="16"
+                                              viewBox="0 0 24 24"
+                                              fill="none"
+                                              stroke="currentColor"
+                                              strokeWidth="2"
+                                              strokeLinecap="round"
+                                              strokeLinejoin="round"
+                                            >
+                                              <circle cx="12" cy="12" r="1" />
+                                              <circle cx="12" cy="5" r="1" />
+                                              <circle cx="12" cy="19" r="1" />
+                                            </svg>
+                                          </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent
+                                          align={isUser ? "start" : "end"}
+                                          className="w-56 z-50"
+                                        >
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              handleDownload({
+                                                url: firstMediaUrl,
+                                                type: "image",
+                                                name: `post-image.jpg`,
+                                              });
+                                            }}
+                                            className="cursor-pointer"
+                                          >
+                                            Download image
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              if (message.content) {
+                                                openPost(message.content);
+                                              }
+                                            }}
+                                            className="cursor-pointer"
+                                          >
+                                            View Post
+                                          </DropdownMenuItem>
+                                          {isUser &&
+                                            onUnsendMessage && (
+                                              <DropdownMenuItem
+                                                onClick={() => {
+                                                  handleUnsend();
+                                                }}
+                                                className="cursor-pointer text-red-500 hover:text-red-600 focus:text-red-700"
+                                              >
+                                                Unsend message
+                                              </DropdownMenuItem>
+                                            )}
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </div>
+                                  );
+                                })()}
+                              </>
                             )}
 
-                          <a
-                            href={`/social/post/${message.content}`}
-                            className="text-xs text-white hover:underline"
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          {/* View Post link - opens in global modal */}
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (message.content) {
+                                openPost(message.content);
+                              }
+                            }}
+                            className="text-xs text-blue-600 hover:underline p-2 block text-left"
                           >
                             View Post
-                          </a>
+                          </button>
                         </>
                       ) : (
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-gray-600 p-2">
                           Could not load post preview.
                         </div>
                       )}
@@ -528,8 +675,7 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
 
                       {/* Unsend option (only for user's messages, not for posts) */}
                       {isUser &&
-                        onUnsendMessage &&
-                        (message.message_type as unknown as string) !== "media" && (
+                        onUnsendMessage && (
                           <DropdownMenuItem
                             onClick={() => {
                               handleUnsend();
@@ -553,8 +699,13 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
               <span
                 className={`text-xs whitespace-nowrap absolute bottom-1 right-2 ${
                   isUser ? "text-black-200" : "text-gray-500"
-                } ${(message.message_type as unknown as string) === "video" ? "text-white " : ""}
-                  ${(message.message_type as unknown as string) === "image" ? "text-white " : ""}
+                } ${message.message_type === "video" ? "text-white " : ""}
+                  ${message.message_type === "image" ? "text-white " : ""}
+                  ${
+                    message.message_type === "post"
+                      ? "text-gray-400"
+                      : ""
+                  }
                   `}
               >
                 {format(message.timestamp, "h:mm a")}
@@ -574,8 +725,8 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
               </DropdownMenuItem>
             )}
 
-            {(((message.message_type as unknown as string) === "image") ||
-              ((message.message_type as unknown as string) === "video")) &&
+            {(message.message_type === "image" ||
+              message.message_type === "video") &&
               message.content && (
                 <DropdownMenuItem
                   onClick={() => {
@@ -593,9 +744,12 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
 
             {message.message_type === "post" && message.content && (
               <DropdownMenuItem
-                onClick={() => {
-                  // Navigate to the post page
-                  window.open(`/social/post/${message.content}`, "_blank");
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (message.content) {
+                    openPost(message.content);
+                  }
                 }}
                 className="cursor-pointer"
               >
@@ -641,18 +795,15 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
           >
             {selectedImage && (
               <div className="relative flex items-center justify-center h-full">
-                <div className="relative w-full h-[80vh]">
-                  <Image
-                    src={selectedImage.url}
-                    alt="Preview"
-                    fill
-                    className="object-contain"
-                    sizes="90vw"
-                  />
-                </div>
+                <img
+                  src={selectedImage.url}
+                  alt="Preview"
+                  className="max-w-full max-h-[80vh] object-contain"
+                />
 
-                {/* Navigation controls for multiple images */}
-                {message.media &&
+                {/* Navigation controls for multiple images - only show for regular image messages, not posts */}
+                {message.message_type !== "post" &&
+                  message.media &&
                   message.media.filter((m) => m.type === "image").length >
                     1 && (
                     <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
@@ -676,9 +827,9 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
                   <button
                     onClick={() =>
                       handleDownload({
-                        url: message.content,
-                        type: message.message_type || "image",
-                        name: `downloaded-${message.message_type || "file"}`,
+                        url: selectedImage.url,
+                        type: message.message_type === "post" ? "image" : (message.message_type || "image"),
+                        name: message.message_type === "post" ? `post-image.jpg` : `downloaded-${message.message_type || "file"}`,
                       })
                     }
                     className={`w-10 h-10 bg-black/60 rounded-full flex items-center justify-center text-white ${
@@ -687,7 +838,17 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
                   >
                     <Download className="h-5 w-5" />
                   </button>
-                  {isUser && onDeleteMedia && (
+                  {isUser && onDeleteMedia && message.message_type !== "post" && (
+                    <button
+                      onClick={() => {
+                        handleUnsend();
+                      }}
+                      className="w-10 h-10 bg-black/60 rounded-full flex items-center justify-center text-white mr-6"
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </button>
+                  )}
+                  {isUser && onUnsendMessage && message.message_type === "post" && (
                     <button
                       onClick={() => {
                         handleUnsend();

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useEffect, useLayoutEffect, useState, useRef, useMemo, useCallback } from "react";
+import useSWR from "swr";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { X, ChevronLeft, ChevronRight, Heart, MessageCircle, Send, Bookmark, MoreHorizontal, Loader2, Volume2, VolumeX, ChevronUp, ChevronDown } from "lucide-react";
 import { socialApi, supabase } from "@/integrations/supabase/client";
@@ -24,6 +25,8 @@ import { useToast } from "@/hooks/use-toast";
 
 interface PostModalProps {
   postId: string;
+  onClose?: () => void;
+  commentId?: string;
 }
 
 interface CommentWithProfile {
@@ -45,9 +48,8 @@ interface FlatComment extends CommentWithProfile {
   directParent?: CommentWithProfile;
 }
 
-export default function PostModal({ postId }: PostModalProps) {
+export default function PostModal({ postId, onClose, commentId: commentIdProp }: PostModalProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, isAuthenticated } = useAuth();
   const [post, setPost] = useState<PostWithProfile | null>(null);
@@ -72,9 +74,10 @@ export default function PostModal({ postId }: PostModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const commentsContainerRef = useRef<HTMLDivElement>(null);
+  const [isLiking, setIsLiking] = useState(false); // Track if we're in the middle of a like action
   
-  // Check if coming from notification with comment ID
-  const commentId = searchParams.get('commentId');
+  // Check if coming from notification with comment ID - use prop if provided, otherwise searchParams
+  const commentId = commentIdProp || searchParams.get('commentId');
   const [commentsExpanded, setCommentsExpanded] = useState(!!commentId);
   const [isClosing, setIsClosing] = useState(false);
 
@@ -99,107 +102,105 @@ export default function PostModal({ postId }: PostModalProps) {
     setDeleteLoading(false);
     setLoading(true);
     setCommentsLoading(true);
-    
-    // Reset comments expanded based on new commentId
+  }, [postId]); // Only reset when postId changes, not when searchParams changes
+
+  // Handle commentId separately to avoid resetting post data
+  useEffect(() => {
     const newCommentId = searchParams.get('commentId');
     setCommentsExpanded(!!newCommentId);
-  }, [postId, searchParams]);
+  }, [searchParams]);
 
-  // Reset when pathname changes to a post route (handles reopening same post)
-  useEffect(() => {
-    if (pathname && pathname.includes('/social/post/')) {
-      const pathnamePostId = pathname.match(/\/social\/post\/([^/?]+)/)?.[1];
-      // If we're on the post route for this postId, ensure modal is open
-      if (pathnamePostId === postId) {
-        setIsClosing(false);
-        // Clear post to force fresh fetch when reopening
-        // This handles the case of reopening the same post
-        setPost(null);
-        setLoading(true);
-      }
-    }
-  }, [pathname, postId]);
 
-  // Fetch post
-  useEffect(() => {
-    // Don't fetch if modal is closing
-    if (isClosing) {
-      return;
-    }
-
-    // Check if we're on the post route
-    const isOnPostRoute = pathname?.includes('/social/post/');
-    if (!isOnPostRoute) {
-      return;
-    }
-
-    // Fetch if post is not loaded or if postId doesn't match
-    const shouldFetch = !post || post.id !== postId;
-
-    if (!shouldFetch) {
-      // Ensure loading is false if post is already loaded
-      if (loading) {
-        setLoading(false);
-      }
-      return;
-    }
-
-    const fetchPost = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await socialApi.posts.getById(postId);
-        if (data) {
-          setPost(data as PostWithProfile);
-          setLikesCount(data.likes_count || 0);
-        } else {
-          // If no data and no error, or if there's an error, ensure we stop loading
-          console.error("Error fetching post:", error || "No data returned");
-          setPost(null);
-        }
-      } catch (error) {
-        console.error("Error fetching post:", error);
-        setPost(null);
-      } finally {
-        // Always set loading to false, even if there's an error
-        setLoading(false);
-      }
-    };
-    
-    fetchPost();
-  }, [postId, isClosing, pathname]);
-
-  // Fetch comments function
-  const fetchAndSetComments = async () => {
-    setCommentsLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
-
-      const response = await fetch(
-        `/api/comments?postId=${postId}&orderBy=asc&_t=${Date.now()}`,
-        {
-          cache: 'no-store',
-          headers: {
-            ...(accessToken && { 'Authorization': `Bearer ${accessToken}` }),
-          },
-        }
-      );
-
-      if (response.ok) {
-        const { data } = await response.json();
-        setComments(data || []);
-      }
-    } catch (error) {
-      console.error("Error fetching comments:", error);
-    } finally {
-      setCommentsLoading(false);
-    }
+  // SWR fetchers
+  const fetchPost = async () => {
+    const { data, error } = await socialApi.posts.getById(postId);
+    if (error) throw error;
+    return data as PostWithProfile;
   };
 
-  // Fetch comments on mount
-  useEffect(() => {
-    fetchAndSetComments();
+  const fetchComments = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+    const response = await fetch(
+      `/api/comments?postId=${postId}&orderBy=asc&_t=${Date.now()}`,
+      {
+        cache: 'no-store',
+        headers: {
+          ...(accessToken && { 'Authorization': `Bearer ${accessToken}` }),
+        },
+      }
+    );
+    if (!response.ok) throw new Error("Failed to fetch comments");
+    const { data } = await response.json();
+    return data || [];
+  };
+
+  const {
+    data: swrPost,
+    isLoading: swrPostLoading,
+    error: swrPostError,
+    mutate: mutatePost,
+  } = useSWR(postId && !isClosing ? ['post', postId] : null, fetchPost, {
+    revalidateOnFocus: false,
+    dedupingInterval: 2000, // Cache for 2 seconds to prevent rapid refetches
+  });
+
+  const {
+    data: swrComments,
+    isLoading: swrCommentsLoading,
+    error: swrCommentsError,
+    mutate: mutateComments,
+  } = useSWR(postId && !isClosing ? ['comments', postId] : null, fetchComments, {
+    revalidateOnFocus: false,
+    dedupingInterval: 2000,
+  });
+
+  // Function to fetch likes count from the likes table
+  const fetchLikesCount = useCallback(async () => {
+    if (!postId) return;
+    try {
+      const { count, error } = await supabase
+        .from("likes")
+        .select("*", { count: "exact", head: true })
+        .eq("post_id", postId);
+      
+      if (!error && typeof count === "number") {
+        setLikesCount(count);
+      }
+    } catch (error) {
+      console.error("Error fetching likes count:", error);
+    }
   }, [postId]);
+
+  // Sync SWR state to local state
+  useEffect(() => {
+    // Only update loading state based on SWR state
+    // Keep loading true until we have data OR there's a definitive error
+    if (swrPost) {
+      setPost(swrPost);
+      setLoading(false); // Only stop loading when we have the post
+      // Fetch likes count separately since it's not in the post data
+      // Only fetch if we're not in the middle of a like action (to avoid overwriting optimistic update)
+      if (!isLiking) {
+        fetchLikesCount();
+      }
+    } else if (swrPostError) {
+      // If there's an error, stop loading to show error state
+      setLoading(false);
+    } else {
+      // If no data yet, use SWR's loading state
+      // This ensures we show loader while fetching
+      setLoading(swrPostLoading);
+    }
+  }, [swrPost, swrPostLoading, swrPostError, fetchLikesCount, isLiking]);
+
+  useEffect(() => {
+    setCommentsLoading(swrCommentsLoading);
+    if (swrComments) {
+      setComments(swrComments);
+    }
+  }, [swrComments, swrCommentsLoading]);
+
 
   // Scroll to specific comment if coming from notification
   useEffect(() => {
@@ -299,13 +300,33 @@ export default function PostModal({ postId }: PostModalProps) {
   } | null>(null);
   
   // Capture scroll position immediately when component mounts (before any rendering)
-  useEffect(() => {
+  // Use useLayoutEffect to run synchronously before browser paint to prevent any scrolling
+  useLayoutEffect(() => {
+    // Capture scroll position synchronously - MUST be first thing we do
+    // Get the actual current scroll position immediately
+    const currentScrollY = typeof window !== 'undefined' ? window.scrollY : 0;
+    
     // Get stored scroll position from sessionStorage (set by PostCard before navigation)
+    // Use stored value if available, otherwise use current scroll position
     const savedScroll = sessionStorage.getItem('modalScrollPosition');
-    const scrollY = savedScroll ? parseInt(savedScroll, 10) : (typeof window !== 'undefined' ? window.scrollY : 0);
+    const scrollY = savedScroll && parseInt(savedScroll, 10) >= 0 
+      ? parseInt(savedScroll, 10) 
+      : currentScrollY;
+    
+    // Store in ref for later use
     scrollPositionRef.current = scrollY;
     
-    // Prevent body scroll immediately to prevent any scrolling
+    // Capture the actual document height BEFORE making body fixed
+    // This prevents layout shifts in background content
+    const actualDocumentHeight = Math.max(
+      document.body.scrollHeight,
+      document.body.offsetHeight,
+      document.documentElement.clientHeight,
+      document.documentElement.scrollHeight,
+      document.documentElement.offsetHeight
+    );
+    
+    // Save original body styles before modifying
     originalBodyStyleRef.current = {
       overflow: document.body.style.overflow,
       position: document.body.style.position,
@@ -315,19 +336,49 @@ export default function PostModal({ postId }: PostModalProps) {
       height: document.body.style.height,
     };
     
-    // Set body to fixed position at the current scroll position
-    // This prevents the page from scrolling when modal opens (works on mobile too)
+    // Prevent any scroll events during initialization with a temporary listener
+    // This catches any scroll that might happen between route change and style application
+    const preventScroll = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Force scroll position back if anything tries to scroll
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
+      }
+    };
+    
+    // Add scroll prevention listeners immediately (before applying styles)
+    // Use capture phase to catch events early
+    const options = { passive: false, capture: true };
+    window.addEventListener('scroll', preventScroll, options);
+    window.addEventListener('wheel', preventScroll, options);
+    window.addEventListener('touchmove', preventScroll, options);
+    
+    // Now apply body styles to lock scroll position
+    // Use actual document height instead of 100% to prevent layout shifts
     document.body.style.overflow = 'hidden';
     document.body.style.position = 'fixed';
     document.body.style.top = `-${scrollY}px`;
     document.body.style.left = '0';
     document.body.style.width = '100%';
-    document.body.style.height = '100%';
-    
-    // Prevent touch scrolling on mobile
+    document.body.style.height = `${actualDocumentHeight}px`;
     document.body.style.touchAction = 'none';
     
+    // Remove scroll prevention listeners after styles are applied (they're no longer needed)
+    // Use a microtask to ensure it happens after current execution
+    Promise.resolve().then(() => {
+      window.removeEventListener('scroll', preventScroll, options);
+      window.removeEventListener('wheel', preventScroll, options);
+      window.removeEventListener('touchmove', preventScroll, options);
+    });
+    
     return () => {
+      // Remove scroll prevention listeners (in case they're still attached)
+      const options = { passive: false, capture: true };
+      window.removeEventListener('scroll', preventScroll, options);
+      window.removeEventListener('wheel', preventScroll, options);
+      window.removeEventListener('touchmove', preventScroll, options);
+      
       // Restore body styles first - ensure all are reset
       document.body.style.overflow = '';
       document.body.style.position = '';
@@ -357,24 +408,7 @@ export default function PostModal({ postId }: PostModalProps) {
   }, []);
 
   // Store the previous URL when modal opens
-  const previousUrlRef = useRef<string | null>(null);
-  
-  useEffect(() => {
-    // Store the referrer or previous page URL
-    const referrer = document.referrer;
-    const storedUrl = sessionStorage.getItem('preModalUrl');
-    
-    // If we don't have a stored URL, store the current one minus the post path
-    if (!storedUrl) {
-      // Try to get the base URL (remove /social/post/[id])
-      const currentPath = window.location.pathname;
-      if (currentPath.includes('/social/post/')) {
-        sessionStorage.setItem('preModalUrl', '/social');
-      }
-    }
-    
-    previousUrlRef.current = storedUrl || '/social';
-  }, []);
+  // previousUrlRef no longer needed (intercept routing removed)
 
   // Restore body styles when modal is closing
   useEffect(() => {
@@ -407,26 +441,7 @@ export default function PostModal({ postId }: PostModalProps) {
     }
   }, [isClosing]);
 
-  // Watch pathname changes and close modal if we're no longer on the post route
-  useEffect(() => {
-    if (pathname) {
-      // Extract post ID from pathname
-      const pathnamePostId = pathname.match(/\/social\/post\/([^/?]+)/)?.[1];
-      
-      // If we're not on a post route at all, close the modal
-      if (!pathname.includes('/social/post/')) {
-        setIsClosing(true);
-      } 
-      // If we're on a post route (same or different post), ensure modal is open
-      else if (pathname.includes('/social/post/')) {
-        setIsClosing(false);
-        // If it's a different post, reset state
-        if (pathnamePostId && pathnamePostId !== postId) {
-          // State will be reset by the postId change effect
-        }
-      }
-    }
-  }, [pathname, postId]);
+  // Pathname-driven logic removed (using global provider instead)
 
   // Close modal and go back
   const closeModal = (e?: React.MouseEvent) => {
@@ -461,15 +476,25 @@ export default function PostModal({ postId }: PostModalProps) {
       document.body.style.height = originalBodyStyleRef.current.height || '';
     }
     
+    // If a caller-provided onClose exists (client-side modal), just close without routing
+    if (onClose) {
+      sessionStorage.removeItem('preModalUrl');
+      sessionStorage.removeItem('modalScrollPosition');
+      onClose();
+      // Restore scroll position for feed
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
+      return;
+    }
+    
     // Get target URL
-    const targetUrl = previousUrlRef.current || '/social';
+    const targetUrl = '/social';
     
     // Clear stored data
     sessionStorage.removeItem('preModalUrl');
     sessionStorage.removeItem('modalScrollPosition');
     
-    // For intercepting routes, we need to navigate away from the current route
-    // Use replace to avoid adding to history and ensure the route changes
     router.replace(targetUrl as any);
     
     // Restore scroll position after navigation
@@ -505,22 +530,43 @@ export default function PostModal({ postId }: PostModalProps) {
   const handleLike = async () => {
     if (!user) return;
     try {
+      // Set flag to prevent fetching likes count during action
+      setIsLiking(true);
+      
+      // Optimistic update
+      const newIsLiked = !isLiked;
+      setIsLiked(newIsLiked);
+      setLikesCount((prev) => newIsLiked ? prev + 1 : prev - 1);
+      
+      // Perform the actual like/unlike action
       if (isLiked) {
         await supabase
           .from("likes")
           .delete()
           .eq("post_id", postId)
           .eq("user_id", user.id);
-        setLikesCount((prev) => prev - 1);
       } else {
         await supabase
           .from("likes")
           .insert({ post_id: postId, user_id: user.id });
-        setLikesCount((prev) => prev + 1);
       }
-      setIsLiked(!isLiked);
+      
+      // Fetch the actual likes count from the database
+      await fetchLikesCount();
+      
+      // Clear flag
+      setIsLiking(false);
     } catch (error) {
+      // Revert optimistic update on error
+      setIsLiked(isLiked);
+      setLikesCount((prev) => isLiked ? prev + 1 : prev - 1);
+      setIsLiking(false);
       console.error("Error toggling like:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update like. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -543,6 +589,7 @@ export default function PostModal({ postId }: PostModalProps) {
         });
       }
       setIsSaved(!isSaved);
+      await mutatePost();
     } catch (error) {
       console.error("Error toggling save:", error);
     }
@@ -615,9 +662,8 @@ export default function PostModal({ postId }: PostModalProps) {
       // Clear reply state
       setReplyingToCommentId(null);
 
-      // Wait a bit for database to update, then re-fetch with fresh data
-      await new Promise(resolve => setTimeout(resolve, 100));
-      await fetchAndSetComments();
+      // Revalidate comments via SWR
+      await mutateComments();
 
       // Scroll to the newly created comment after re-fetch and DOM update
       setTimeout(() => {
@@ -814,7 +860,18 @@ export default function PostModal({ postId }: PostModalProps) {
     return null;
   }
 
-  if (loading) {
+  // Add timeout for loading state to prevent infinite loader (only if there's an error)
+  useEffect(() => {
+    if (loading && !post && swrPostError) {
+      // If there's an error, stop loading after a short delay to show error state
+      const timeout = setTimeout(() => {
+        setLoading(false);
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [loading, post, swrPostError]);
+
+  if (loading && !post) {
     return (
       <div 
         className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
@@ -825,7 +882,22 @@ export default function PostModal({ postId }: PostModalProps) {
     );
   }
 
-  if (!post) {
+  // Show error state if SWR fetch failed
+  if (swrPostError && !post) {
+    return (
+      <div 
+        className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
+        onClick={handleBackdropClick}
+      >
+        <div className="bg-white rounded-lg p-8 text-center max-w-md mx-4">
+          <p className="text-gray-600 mb-4">Failed to load post. Please try again.</p>
+          <Button onClick={closeModal} className="mt-4">Close</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!post && !loading) {
     return (
       <div 
         className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
@@ -837,6 +909,11 @@ export default function PostModal({ postId }: PostModalProps) {
         </div>
       </div>
     );
+  }
+
+  // Type guard: post must be defined at this point after all early returns
+  if (!post) {
+    return null;
   }
 
   return (
@@ -870,7 +947,7 @@ export default function PostModal({ postId }: PostModalProps) {
         <div className={cn(
           "w-full lg:w-[55%] bg-black flex items-center justify-center relative lg:h-full transition-all duration-300",
           // Mobile: 200px when comments expanded, 400px when hidden
-          commentsExpanded ? "h-[200px] lg:h-full" : "h-[400px] lg:flex-1"
+          commentsExpanded ? "h-[200px] lg:h-full" : "h-[600px] lg:flex-1"
         )}>
           {media && media.length > 0 ? (
             <>

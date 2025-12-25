@@ -11,11 +11,12 @@ import PostSkeleton from "../../lib/PostSkeleton";
 interface PostTabsProps {
   renderAfterIndex?: number;
   AfterComponent?: ReactNode;
+  onOpenPost?: (id: string) => void;
 }
 
 const POSTS_PER_PAGE = 10;
 
-const PostTabs = ({ renderAfterIndex, AfterComponent }: PostTabsProps) => {
+const PostTabs = ({ renderAfterIndex, AfterComponent, onOpenPost }: PostTabsProps) => {
   const [activeTab, setActiveTab] = useState("trending");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const { user } = useAuth();
@@ -285,6 +286,7 @@ const PostTabs = ({ renderAfterIndex, AfterComponent }: PostTabsProps) => {
           onPostReported={handlePostReported}
           openCollaboratorsPostId={openCollaboratorsPostId}
           setOpenCollaboratorsPostId={setOpenCollaboratorsPostId}
+          onOpenPost={onOpenPost}
         />
       );
       if (

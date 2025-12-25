@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
-import Post from "./Post";
+import Post from "@/components/social/Post";
 import PostCardForHomePage from "./PostCardForHomePage";
 
 interface PostCardWrapperProps {
@@ -16,6 +16,7 @@ interface PostCardWrapperProps {
   onPostReported?: (postId: string) => void;
   openCollaboratorsPostId?: string | null;
   setOpenCollaboratorsPostId?: (id: string | null) => void;
+  onOpenPost?: (id: string) => void;
 }
 
 // Helper function to format time ago
@@ -72,6 +73,7 @@ const PostCardWrapper = ({
   onPostReported,
   openCollaboratorsPostId,
   setOpenCollaboratorsPostId,
+  onOpenPost,
 }: PostCardWrapperProps) => {
   const router = useRouter();
   const pathname = usePathname();
@@ -164,6 +166,7 @@ const PostCardWrapper = ({
           user_tag={post.user_tag || undefined}
           openCollaboratorsPostId={openCollaboratorsPostId}
           setOpenCollaboratorsPostId={setOpenCollaboratorsPostId}
+          onOpenPost={onOpenPost}
         />
       )}
       {/* {(post.category === "Product" || post.category === "Vehicle") &&

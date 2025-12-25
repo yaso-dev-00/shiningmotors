@@ -289,7 +289,9 @@ export const CategoryDocumentCard: React.FC<CategoryDocumentCardProps> = ({
                                  const link = document.createElement('a');
                                  link.href = url;
                                  link.download = `${category}_${documentName}_all.zip`;
+                                 link.target = "_blank";
                                  link.click();
+                                
                                });
                              }}
                              className="h-6 px-2 text-xs hover:bg-gray-200 transition-colors"

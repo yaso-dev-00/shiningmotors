@@ -99,6 +99,9 @@ const Conversations: React.FC<ConversationsProps> = ({
                     onClick={() => {
                       router.push(`/messenger/${conversation.user_id}`);
                       onSelectConversation(conversation.user_id);
+                      if (typeof window !== 'undefined') {
+                        sessionStorage.setItem("userName", conversation.full_name || "");
+                      }
                     }}
                   >
                     <div className="relative">
