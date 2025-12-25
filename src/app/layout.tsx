@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import 'nprogress/nprogress.css';
 import Providers from './providers';
+import { PostModalProvider } from "@/contexts/PostModalProvider";
 import PwaRegister from '@/components/PwaRegister';
 import PwaInstallPrompt from '@/components/PwaInstallPrompt';
 
@@ -37,7 +38,6 @@ export const metadata: Metadata = {
     ],
   },
   manifest: '/manifest.json',
-  themeColor: '#030712',
   icons: {
     icon: [
       {
@@ -50,14 +50,20 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport = {
+  themeColor: '#030712',
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
         <PwaRegister />
         <Providers>
-          {children}
-          <PwaInstallPrompt />
+          <PostModalProvider>
+            {children}
+            <PwaInstallPrompt />
+          </PostModalProvider>
         </Providers>
       </body>
     </html>

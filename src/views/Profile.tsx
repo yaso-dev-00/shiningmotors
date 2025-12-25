@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePostModal } from "@/contexts/PostModalProvider";
 import {
   Settings,
   LogOut,
@@ -37,6 +38,7 @@ const Profile = () => {
   const id = (params?.id as string) ?? "";
   const { user } = useAuth();
   const router = useRouter();
+  const { openPost } = usePostModal();
 
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [stats, setStats] = useState({ posts: 0, followers: 0, following: 0 });
@@ -195,7 +197,10 @@ const Profile = () => {
           <div
             key={post.id}
             className="relative cursor-pointer group"
-             onClick={() => router.push(`/social/post/${post.id}`)}
+             onClick={() => {
+               sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+               openPost(post.id);
+             }}
           >
             {post.media_urls?.[0] &&
             post.media_urls[0].match(/\.(mp4|mov|webm)$/i) ? (
@@ -498,7 +503,10 @@ const Profile = () => {
                       <div
                         key={post.id}
                         className="relative cursor-pointer group aspect-square"
-                         onClick={() => router.push(`/social/post/${post.id}`)}
+                         onClick={() => {
+               sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+               openPost(post.id);
+             }}
                       >
                         {post.media_urls?.[0] &&
                         post.media_urls[0].match(/\.(mp4|mov|webm)$/i) ? (
@@ -554,7 +562,10 @@ const Profile = () => {
                           <div
                             key={post.id}
                             className="relative group cursor-pointer min-h-[200px] md:min-h-[400px]"
-                             onClick={() => router.push(`/social/post/${post.id}`)}
+                             onClick={() => {
+               sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+               openPost(post.id);
+             }}
                           >
                             {post.media_urls?.[0] &&
                             post.media_urls[0].match(/\.(mp4|mov|webm)$/i) ? (

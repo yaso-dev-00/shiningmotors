@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePostModal } from "@/contexts/PostModalProvider";
 import { socialApi, supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
@@ -95,6 +96,7 @@ const Post = ({
   const { isAuthenticated, user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const { openPost } = usePostModal();
   const [isShareOpen, setShareOpen] = useState(false);
   const [likeAnim, setLikeAnim] = useState(false);
   const [saveAnim, setSaveAnim] = useState(false);
@@ -526,7 +528,8 @@ const Post = ({
   }, [saveAnim]);
 
   const handlePostClick = () => {
-    router.push(`/social/post/${id}` as any);
+    sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+    openPost(id);
   };
 
   const handleProfileClick = (e: React.MouseEvent) => {

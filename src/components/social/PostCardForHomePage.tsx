@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePostModal } from "@/contexts/PostModalProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
@@ -142,6 +143,7 @@ const PostCardForHomePage = ({
   const [isShareOpen, setShareOpen] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
+  const { openPost } = usePostModal();
   const [likeAnim, setLikeAnim] = useState(false);
   const [likesAnim, setLikesAnim] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -471,7 +473,8 @@ const PostCardForHomePage = ({
   };
 
   const handlePostClick = () => {
-    router.push(`/social/post/${id}` as any);
+    sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+    openPost(id);
   };
 
   const handleProfileClick = (e: React.MouseEvent) => {
@@ -712,7 +715,8 @@ const PostCardForHomePage = ({
 
   const handleCommentClick = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    router.push(`/social/post/${id}` as any);
+    sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+    openPost(id);
   };
 
   // Use React Query for better caching and performance
@@ -860,7 +864,8 @@ const PostCardForHomePage = ({
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
-                  router.push(`/social/post/${id}` as any);
+                  sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+                  openPost(id);
                 }}
               >
                 Post Details

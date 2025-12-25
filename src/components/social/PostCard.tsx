@@ -86,6 +86,7 @@ interface PostCardProps {
   user_tag?: string[] | null;
   openCollaboratorsPostId?: string | null;
   setOpenCollaboratorsPostId?: (id: string | null) => void;
+  onOpenPost?: (id: string) => void;
 }
 
 function PostCardCommentInput({ 
@@ -170,6 +171,7 @@ const PostCard = ({
   onPostReported,
   openCollaboratorsPostId,
   setOpenCollaboratorsPostId,
+  onOpenPost,
 }: PostCardProps) => {
   const [isLiked, setIsLiked] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -768,9 +770,12 @@ const PostCard = ({
   };
 
   const handlePostClick = () => {
-    // Store current URL and scroll position before navigating to modal
-    sessionStorage.setItem('preModalUrl', window.location.pathname);
+    // Store scroll position for restoration
     sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+    if (onOpenPost) {
+      onOpenPost(id);
+      return;
+    }
     router.push(`/social/post/${id}` as any);
   };
 
@@ -1139,15 +1144,19 @@ const PostCard = ({
                 {isSaved ? "Unsave" : "Save"} post
               </DropdownMenuItem>
 
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  sessionStorage.setItem('preModalUrl', window.location.pathname);
-                  router.push(`/social/post/${id}` as any);
-                }}
-              >
-                Post Details
-              </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
+              if (onOpenPost) {
+                onOpenPost(id);
+              } else {
+                router.push(`/social/post/${id}` as any);
+              }
+            }}
+          >
+            Post Details
+          </DropdownMenuItem>
               <DropdownMenuItem onClick={handleProfileClick}>
                 View Profile
               </DropdownMenuItem>
@@ -1337,14 +1346,14 @@ const PostCard = ({
                   src={media[0].url}
                   alt="Post content"
                  
-                 width={1000}
-                 height={1000}
+                 width={700}
+                 height={800}
                   className="object-cover h-full w-full"
                   // sizes="(min-width: 768px) 80vw, 100vw"
-                  onError={(e) => {
-                    const el = e.currentTarget as unknown as HTMLImageElement;
-                    if (el && el.style) el.style.display = "none";
-                  }}
+                  // onError={(e) => {
+                  //   const el = e.currentTarget as unknown as HTMLImageElement;
+                  //   if (el && el.style) el.style.display = "none";
+                  // }}
                 />
               </div>
             ) : (

@@ -4,6 +4,7 @@ import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useRouter } from 'next/navigation';
+import { usePostModal } from '@/contexts/PostModalProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -42,6 +43,7 @@ const NotificationsTab = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const { openPost } = usePostModal();
 
   const [preferences, setPreferences] = useState<NotificationPreferences>({
     push_likes: true,
@@ -321,7 +323,22 @@ const NotificationsTab = () => {
       markAsRead(notification.id);
     }
     
-    // Navigate to related page
+    const data = notification.data as any;
+    
+    // Handle post-related notifications with global modal
+    if (notification.type === 'post_like' || 
+        notification.type === 'post_comment' || 
+        notification.type === 'new_post') {
+      const postId = data?.post_id;
+      if (postId) {
+        // For comment notifications, pass commentId to scroll to that comment
+        const commentId = notification.type === 'post_comment' ? data?.comment_id : undefined;
+        openPost(postId, commentId);
+        return;
+      }
+    }
+    
+    // For other notification types, navigate normally
     const url = getNotificationUrl(notification);
     router.push(url as any);
   };
