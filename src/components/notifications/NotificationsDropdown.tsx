@@ -47,6 +47,8 @@ interface NotificationsDropdownProps {
   unreadCount: number;
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
@@ -54,6 +56,8 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
   unreadCount,
   onMarkAsRead,
   onMarkAllAsRead,
+  open,
+  onOpenChange,
 }) => {
   const router = useRouter();
   const { openPost } = usePostModal();
@@ -227,7 +231,7 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
@@ -263,7 +267,7 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
             No notifications yet
           </div>
         ) : (
-          <ScrollArea className="h-80">
+          <ScrollArea className="h-80 scrollbar-hide">
             {recentNotifications.map((notification) => (
               <DropdownMenuItem
                 key={notification.id}

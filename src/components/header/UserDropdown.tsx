@@ -18,7 +18,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import NProgress from "nprogress";
 import { RouteRemember } from "../RouteRemember";
 
-export const UserDropdown = () => {
+interface UserDropdownProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export const UserDropdown = ({ open, onOpenChange }: UserDropdownProps) => {
   const router = useRouter();
   const pathname = usePathname();
   const { signOut, user, profile } = useAuth();
@@ -35,7 +40,7 @@ export const UserDropdown = () => {
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="rounded-full">
           <UserCircle size={20} />
