@@ -26,6 +26,8 @@ const Header = () => {
   const isDrag = ctx?.isDrag ?? false;
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = useState(false);
   const isAuthPage = pathname === "/auth";
   const { notifications, unreadCount, markAsRead, markAllAsRead } =
     useNotifications();
@@ -55,6 +57,11 @@ const Header = () => {
 
     const handleTouchMove = (event: TouchEvent) => {
       if (isDrag) return;
+      
+      // Don't hide header if any dropdown or sidebar is open
+      if (isSidebarOpen || isUserDropdownOpen || isNotificationDropdownOpen) {
+        return;
+      }
 
       const currentY = event.touches[0].clientY;
       const deltaY = currentY - startY;
@@ -77,7 +84,14 @@ const Header = () => {
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchmove", handleTouchMove);
     };
-  }, [isDrag]);
+  }, [isDrag, isSidebarOpen, isUserDropdownOpen, isNotificationDropdownOpen]);
+
+  // Keep header visible when any dropdown or sidebar is open
+  useEffect(() => {
+    if (isSidebarOpen || isUserDropdownOpen || isNotificationDropdownOpen) {
+      setIsVisible(true);
+    }
+  }, [isSidebarOpen, isUserDropdownOpen, isNotificationDropdownOpen]);
 
   const glassClasses =
     "backdrop-blur-md bg-white/70 border-b border-white/10 shadow-sm";
@@ -157,11 +171,16 @@ const Header = () => {
                     unreadCount={unreadCount}
                     onMarkAsRead={markAsRead}
                     onMarkAllAsRead={markAllAsRead}
+                    open={isNotificationDropdownOpen}
+                    onOpenChange={setIsNotificationDropdownOpen}
                   />
                 )}
 
                 {isAuthenticated ? (
-                  <UserDropdown />
+                  <UserDropdown 
+                    open={isUserDropdownOpen}
+                    onOpenChange={setIsUserDropdownOpen}
+                  />
                 ) : (
                   !isAuthPage && (
                     <Button

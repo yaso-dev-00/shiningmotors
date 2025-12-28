@@ -51,3 +51,4 @@ export default async function HomePage() {
   return <Index initialData={homeData} />;
 }
 
+
