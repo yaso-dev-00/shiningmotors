@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePostModal } from "@/contexts/PostModalProvider";
 import { socialApi, supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -97,6 +98,7 @@ const Post = ({
   const { toast } = useToast();
   const router = useRouter();
   const { openPost } = usePostModal();
+  const queryClient = useQueryClient();
   const [isShareOpen, setShareOpen] = useState(false);
   const [likeAnim, setLikeAnim] = useState(false);
   const [saveAnim, setSaveAnim] = useState(false);
@@ -618,8 +620,44 @@ const Post = ({
     if (!user) return;
     setDeleteLoading(true);
     try {
-      const { error } = await socialApi.posts.deletePost(id, user.id);
-      if (error) throw error;
+      // Get auth token for API route
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // Delete post via API route
+      const response = await fetch(`/api/social/posts/${id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete post");
+      }
+
+      // Wait a bit for server-side processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Invalidate and refetch all post queries to remove the deleted post immediately
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["posts", "trending"] }),
+        queryClient.invalidateQueries({ queryKey: ["posts", "feed"] }),
+        queryClient.invalidateQueries({ queryKey: ["posts", "following"] }),
+        queryClient.invalidateQueries({ queryKey: ["trendingPosts"] }),
+      ]);
+
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["posts", "trending"] }),
+        queryClient.refetchQueries({ queryKey: ["posts", "feed"] }),
+        queryClient.refetchQueries({ queryKey: ["posts", "following"] }),
+        queryClient.refetchQueries({ queryKey: ["trendingPosts"] }),
+      ]);
+
       toast({ description: "Post deleted successfully", variant: "default" });
       if (typeof onPostReported === "function") {
         onPostReported(id);
@@ -733,7 +771,6 @@ const Post = ({
       }, 200);
     }
   }, []);
-console.log(media, "media");
   return (
     <TooltipProvider delayDuration={0}>
       <Card
@@ -855,7 +892,9 @@ console.log(media, "media");
                     fill
                     className="object-contain"
                     sizes="(min-width: 768px) 80vw, 100vw"
+                    loading="eager"
                     priority
+                    quality={85}
                   />
                 </div>
               ) : (
@@ -967,9 +1006,19 @@ console.log(media, "media");
                 {media.map((item, idx) => (
                   <SwiperSlide key={idx} className="relative">
                     {item.type === "image" ? (
-                    <div className="relative w-full h-[300px] md:h-[400px]">
-                     <img src={item.url} alt={`Post media ${idx + 1}`} className="w-full h-full object-cover" />
-                    </div>                    ) : (
+                      <div className="relative w-full h-[300px] md:h-[400px]">
+                        <Image
+                          src={item.url}
+                          alt={`Post media ${idx + 1}`}
+                          fill
+                          className="object-cover"
+                          sizes="(min-width: 768px) 80vw, 100vw"
+                          loading={idx === 0 ? "eager" : "lazy"}
+                          priority={idx === 0}
+                          quality={85}
+                        />
+                      </div>
+                    ) : (
                       <div
                         className={
                           videoAspects[idx] === "portrait"

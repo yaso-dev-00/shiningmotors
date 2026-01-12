@@ -79,14 +79,25 @@ const Social = () => {
         open={createPostOpen}
         onClose={() => setCreatePostOpen(false)}
         userAvatar={user?.user_metadata.avatar_url}
-        onPostCreated={(newPost) => {
-          // Invalidate and refetch posts queries to show the new post immediately
-          queryClient.invalidateQueries({ queryKey: ["posts", "trending"] });
-          queryClient.invalidateQueries({ queryKey: ["posts", "feed"] });
-          queryClient.invalidateQueries({ queryKey: ["posts", "following"] });
-          queryClient.invalidateQueries({ queryKey: ["trendingPosts"] });
+        onPostCreated={async (newPost) => {
+          // Wait a bit for server-side processing
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Invalidate all post queries
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["posts", "trending"] }),
+            queryClient.invalidateQueries({ queryKey: ["posts", "feed"] }),
+            queryClient.invalidateQueries({ queryKey: ["posts", "following"] }),
+            queryClient.invalidateQueries({ queryKey: ["trendingPosts"] }),
+          ]);
 
-          // The query invalidation above will automatically refetch and show the new post
+          // Explicitly refetch all queries to show the new post immediately
+          await Promise.all([
+            queryClient.refetchQueries({ queryKey: ["posts", "trending"] }),
+            queryClient.refetchQueries({ queryKey: ["posts", "feed"] }),
+            queryClient.refetchQueries({ queryKey: ["posts", "following"] }),
+            queryClient.refetchQueries({ queryKey: ["trendingPosts"] }),
+          ]);
         }}
       />
     </Layout>

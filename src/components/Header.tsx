@@ -48,41 +48,148 @@ const Header = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
-    let startY = 0;
+    // Only apply scroll-based visibility on mobile
+    const isMobileDevice = window.innerWidth < 1025;
+    if (!isMobileDevice) {
+      setIsVisible(true);
+      return;
+    }
 
-    const handleTouchStart = (event: TouchEvent) => {
-      if (isDrag) return;
-      startY = event.touches[0].clientY;
+    let lastScrollY = window.scrollY;
+    let lastScrollX = window.scrollX;
+    let isHorizontalScrolling = false;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const scrollThreshold = 10; // Minimum scroll distance to trigger visibility change
+
+    // Track touch events to detect horizontal scrolling on containers
+    const handleTouchStart = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      
+      // Check if the target or its parent has horizontal scroll
+      let element: Element | null = target;
+      while (element && element !== document.body) {
+        const computedStyle = window.getComputedStyle(element);
+        const hasHorizontalScroll = computedStyle.overflowX === 'auto' || 
+                                   computedStyle.overflowX === 'scroll' ||
+                                   computedStyle.overflowX === 'overlay';
+        const scrollWidth = element.scrollWidth;
+        const clientWidth = element.clientWidth;
+        const canScrollHorizontally = scrollWidth > clientWidth;
+        
+        if (hasHorizontalScroll && canScrollHorizontally) {
+          isHorizontalScrolling = true;
+          break;
+        }
+        element = element.parentElement;
+      }
     };
 
-    const handleTouchMove = (event: TouchEvent) => {
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isHorizontalScrolling) return;
+      
+      const currentX = e.touches[0].clientX;
+      const currentY = e.touches[0].clientY;
+      const deltaX = Math.abs(currentX - touchStartX);
+      const deltaY = Math.abs(currentY - touchStartY);
+      
+      // If movement is primarily horizontal, keep the flag
+      if (deltaX > deltaY && deltaX > 10) {
+        isHorizontalScrolling = true;
+      } else if (deltaY > deltaX && deltaY > 10) {
+        // If movement becomes primarily vertical, reset
+        isHorizontalScrolling = false;
+      }
+    };
+
+    const handleTouchEnd = () => {
+      // Reset after a short delay to allow scroll to complete
+      setTimeout(() => {
+        isHorizontalScrolling = false;
+      }, 150);
+    };
+
+    const handleScroll = () => {
       if (isDrag) return;
+      
+      // Ignore if user is scrolling horizontally on a container
+      if (isHorizontalScrolling) {
+        return;
+      }
       
       // Don't hide header if any dropdown or sidebar is open
       if (isSidebarOpen || isUserDropdownOpen || isNotificationDropdownOpen) {
+        setIsVisible(true);
+        lastScrollY = window.scrollY;
+        lastScrollX = window.scrollX;
         return;
       }
 
-      const currentY = event.touches[0].clientY;
-      const deltaY = currentY - startY;
+      const currentScrollY = window.scrollY;
+      const currentScrollX = window.scrollX;
+      const verticalScrollDiff = Math.abs(currentScrollY - lastScrollY);
+      const horizontalScrollDiff = Math.abs(currentScrollX - lastScrollX);
 
-      if (Math.abs(deltaY) < 10) return;
+      // Ignore if horizontal scrolling is dominant (window-level horizontal scroll)
+      if (horizontalScrollDiff > verticalScrollDiff && horizontalScrollDiff > 5) {
+        lastScrollY = currentScrollY;
+        lastScrollX = currentScrollX;
+        return;
+      }
 
-      if (deltaY > 0) {
+      // Only update if vertical scroll difference is significant
+      if (verticalScrollDiff < scrollThreshold) {
+        return;
+      }
+
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      const distanceFromTop = currentScrollY;
+      const distanceFromBottom = documentHeight - (currentScrollY + windowHeight);
+      const edgeThreshold = 100; // Show both navs when within 100px of top or bottom
+
+      // At or near the top of the page, always show header
+      if (distanceFromTop <= edgeThreshold) {
         setIsVisible(true);
-      } else {
+        lastScrollY = currentScrollY;
+        lastScrollX = currentScrollX;
+        return;
+      }
+
+      // At or near the bottom of the page, always show header
+      if (distanceFromBottom <= edgeThreshold) {
+        setIsVisible(true);
+        lastScrollY = currentScrollY;
+        lastScrollX = currentScrollX;
+        return;
+      }
+
+      // Scrolling down (towards bottom) → show header
+      if (currentScrollY > lastScrollY) {
+        setIsVisible(true);
+      } 
+      // Scrolling up (towards top) → hide header
+      else if (currentScrollY < lastScrollY) {
         setIsVisible(false);
       }
 
-      startY = currentY;
+      lastScrollY = currentScrollY;
+      lastScrollX = currentScrollX;
     };
 
     window.addEventListener("touchstart", handleTouchStart, { passive: true });
     window.addEventListener("touchmove", handleTouchMove, { passive: true });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
 
     return () => {
+      window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isDrag, isSidebarOpen, isUserDropdownOpen, isNotificationDropdownOpen]);
 

@@ -36,24 +36,37 @@ const PostTabs = ({ renderAfterIndex, AfterComponent, onOpenPost }: PostTabsProp
   } = useInfiniteQuery({
     queryKey: ["posts", "trending"],
     queryFn: async ({ pageParam = 0 }) => {
-      const { data, error } = await socialApi.posts.getTrending(
-        user?.id || "",
-        POSTS_PER_PAGE,
-        pageParam as number
+      // Add cache-busting timestamp to ensure fresh data
+      const timestamp = Date.now();
+      const response = await fetch(
+        `/api/social/posts/trending?userId=${user?.id || ""}&page=${pageParam}&_t=${timestamp}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+        }
       );
-      if (error) throw error;
-      return data as unknown as PostWithProfile[];
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to fetch trending posts");
+      }
+      const result = await response.json();
+      return (result.data || []) as PostWithProfile[];
     },
     getNextPageParam: (lastPage, allPages) => {
-      const nextPage = allPages.length * POSTS_PER_PAGE;
-      return (lastPage as unknown as PostWithProfile[]).length ===
-        POSTS_PER_PAGE
-        ? nextPage
-        : undefined;
+      // If last page has fewer posts than POSTS_PER_PAGE, we've reached the end
+      const lastPageData = lastPage as unknown as PostWithProfile[];
+      if (!lastPageData || lastPageData.length < POSTS_PER_PAGE) {
+        return undefined;
+      }
+      // Return the next page number (0-indexed, so next is allPages.length)
+      return allPages.length;
     },
     initialPageParam: 0,
     enabled: activeTab === "trending",
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 0, // Always consider data stale to ensure fresh fetches
     gcTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
   });
@@ -69,20 +82,33 @@ const PostTabs = ({ renderAfterIndex, AfterComponent, onOpenPost }: PostTabsProp
   } = useInfiniteQuery({
     queryKey: ["posts", "feed"],
     queryFn: async ({ pageParam = 0 }) => {
-      const { data, error } = await socialApi.posts.getFeed(
-        user?.id || "",
-        POSTS_PER_PAGE,
-        pageParam as number
+      // Add cache-busting timestamp to ensure fresh data
+      const timestamp = Date.now();
+      const response = await fetch(
+        `/api/social/posts/feed?userId=${user?.id || ""}&page=${pageParam}&_t=${timestamp}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+        }
       );
-      if (error) throw error;
-      return data as unknown as PostWithProfile[];
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to fetch feed posts");
+      }
+      const result = await response.json();
+      return (result.data || []) as PostWithProfile[];
     },
     getNextPageParam: (lastPage, allPages) => {
-      const nextPage = allPages.length * POSTS_PER_PAGE;
-      return (lastPage as unknown as PostWithProfile[]).length ===
-        POSTS_PER_PAGE
-        ? nextPage
-        : undefined;
+      // If last page has fewer posts than POSTS_PER_PAGE, we've reached the end
+      const lastPageData = lastPage as unknown as PostWithProfile[];
+      if (!lastPageData || lastPageData.length < POSTS_PER_PAGE) {
+        return undefined;
+      }
+      // Return the next page number (0-indexed, so next is allPages.length)
+      return allPages.length;
     },
     initialPageParam: 0,
     enabled: activeTab === "feed",
@@ -102,20 +128,34 @@ const PostTabs = ({ renderAfterIndex, AfterComponent, onOpenPost }: PostTabsProp
   } = useInfiniteQuery({
     queryKey: ["posts", "following"],
     queryFn: async ({ pageParam = 0 }) => {
-      const { data, error } = await socialApi.posts.getFollowing(
-        user?.id || "",
-        POSTS_PER_PAGE,
-        pageParam as number
+      if (!user?.id) return [];
+      // Add cache-busting timestamp to ensure fresh data
+      const timestamp = Date.now();
+      const response = await fetch(
+        `/api/social/posts/following?userId=${user.id}&page=${pageParam}&_t=${timestamp}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+        }
       );
-      if (error) throw error;
-      return data as unknown as PostWithProfile[];
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to fetch following posts");
+      }
+      const result = await response.json();
+      return (result.data || []) as PostWithProfile[];
     },
     getNextPageParam: (lastPage, allPages) => {
-      const nextPage = allPages.length * POSTS_PER_PAGE;
-      return (lastPage as unknown as PostWithProfile[]).length ===
-        POSTS_PER_PAGE
-        ? nextPage
-        : undefined;
+      // If last page has fewer posts than POSTS_PER_PAGE, we've reached the end
+      const lastPageData = lastPage as unknown as PostWithProfile[];
+      if (!lastPageData || lastPageData.length < POSTS_PER_PAGE) {
+        return undefined;
+      }
+      // Return the next page number (0-indexed, so next is allPages.length)
+      return allPages.length;
     },
     initialPageParam: 0,
     enabled: activeTab === "following" && !!user,
@@ -189,9 +229,13 @@ const PostTabs = ({ renderAfterIndex, AfterComponent, onOpenPost }: PostTabsProp
   }, [user, activeTab, queryClient]);
 
   useEffect(() => {
+    const currentLoader = loaderRef.current;
+    if (!currentLoader) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
           if (
             activeTab === "trending" &&
             hasNextTrendingPage &&
@@ -213,17 +257,19 @@ const PostTabs = ({ renderAfterIndex, AfterComponent, onOpenPost }: PostTabsProp
           }
         }
       },
-      { threshold: 1.0 }
+      { 
+        threshold: 0.1, 
+        rootMargin: '200px' // Trigger 200px before the element is visible
+      }
     );
 
-    if (loaderRef.current) {
-      observer.observe(loaderRef.current);
-    }
+    observer.observe(currentLoader);
 
     return () => {
-      if (loaderRef.current) {
-        observer.unobserve(loaderRef.current);
+      if (currentLoader) {
+        observer.unobserve(currentLoader);
       }
+      observer.disconnect();
     };
   }, [
     activeTab,
@@ -302,9 +348,14 @@ const PostTabs = ({ renderAfterIndex, AfterComponent, onOpenPost }: PostTabsProp
       <div className="grid grid-cols-1 gap-2">
         {postElements}
         {hasNextPage && (
-          <div ref={loaderRef} className="flex justify-center p-4">
-            {isFetchingNextPage && (
+          <div 
+            ref={loaderRef} 
+            className="flex justify-center items-center p-8 min-h-[100px]"
+          >
+            {isFetchingNextPage ? (
               <div className="loader border-t-4 border-blue-500 w-8 h-8 rounded-full animate-spin"></div>
+            ) : (
+              <div className="h-4 w-4" /> // Invisible spacer to ensure element is always present
             )}
           </div>
         )}

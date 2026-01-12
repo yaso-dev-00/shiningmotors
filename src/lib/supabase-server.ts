@@ -33,38 +33,23 @@ export async function createAuthenticatedServerClient(accessToken?: string) {
     },
   });
   
-  // Set the access token for RLS
+  // Set the access token for RLS using global fetch headers
+  // This is the recommended way for server-side RLS
   if (token) {
-    try {
-      // First, verify the token and get the user
-      // This sets the user context in the client for RLS
-      const { data: { user }, error: getUserError } = await client.auth.getUser(token);
-      
-      if (getUserError || !user) {
-        console.warn('Failed to get user from token:', getUserError);
-        // Try setSession as fallback
-        const { error: sessionError } = await client.auth.setSession({
-          access_token: token,
-          refresh_token: token, // Use token as fallback
-        } as any);
-        
-        if (sessionError) {
-          console.warn('Failed to set session:', sessionError);
-        }
-      } else {
-        // User verified, now set the session to ensure RLS works
-        const { error: sessionError } = await client.auth.setSession({
-          access_token: token,
-          refresh_token: token, // Use token as fallback
-        } as any);
-        
-        if (sessionError) {
-          console.warn('Failed to set session after getUser:', sessionError);
-        }
-      }
-    } catch (error) {
-      console.warn('Error setting auth context:', error);
-    }
+    // Create client with token in global headers for RLS
+    // This avoids the setSession issues with expired tokens
+    const authenticatedClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    });
+    return authenticatedClient;
   }
   
   return client;

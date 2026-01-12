@@ -100,7 +100,7 @@ export default function PostModal({ postId, onClose, commentId: commentIdProp }:
     setIsFollowing(false);
     setIsDeleteConfirmOpen(false);
     setDeleteLoading(false);
-    setLoading(true);
+      setLoading(true);
     setCommentsLoading(true);
   }, [postId]); // Only reset when postId changes, not when searchParams changes
 
@@ -678,7 +678,7 @@ export default function PostModal({ postId, onClose, commentId: commentIdProp }:
           setTimeout(() => {
             commentDiv.style.backgroundColor = '';
           }, 2000);
-        } else {
+    } else {
           // Fallback: scroll to top if comment not found
           if (commentsContainerRef.current) {
             commentsContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -964,7 +964,7 @@ export default function PostModal({ postId, onClose, commentId: commentIdProp }:
                     className="max-h-full max-w-full object-contain"
                   />
                   {/* Mute/Unmute button - left side on mobile, right side on desktop */}
-                  <button
+          <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setIsMuted(!isMuted);
@@ -979,8 +979,8 @@ export default function PostModal({ postId, onClose, commentId: commentIdProp }:
                     ) : (
                       <Volume2 className="h-5 w-5" />
                     )}
-                  </button>
-                </div>
+          </button>
+        </div>
               ) : (
                 <div className="relative w-full h-full min-h-[200px]">
                   <Image
@@ -1150,9 +1150,9 @@ export default function PostModal({ postId, onClose, commentId: commentIdProp }:
                     {formatTime(post.created_at)}
                   </p>
                 </div>
-              </div>
-            )}
-
+            </div>
+          )}
+          
             {/* Comments list */}
             {commentsLoading ? (
               <div className="flex justify-center py-8">

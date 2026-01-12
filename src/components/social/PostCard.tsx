@@ -4,6 +4,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -181,6 +182,7 @@ const PostCard = ({
   const [isShareOpen, setShareOpen] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [likeAnim, setLikeAnim] = useState(false);
   const [saveAnim, setSaveAnim] = useState(false);
   const [likesAnim, setLikesAnim] = useState(false);
@@ -924,8 +926,44 @@ const PostCard = ({
     if (!user) return;
     setDeleteLoading(true);
     try {
-      const { error } = await socialApi.posts.deletePost(id, user.id);
-      if (error) throw error;
+      // Get auth token for API route
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // Delete post via API route
+      const response = await fetch(`/api/social/posts/${id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete post");
+      }
+
+      // Wait a bit for server-side processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Invalidate and refetch all post queries to remove the deleted post immediately
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["posts", "trending"] }),
+        queryClient.invalidateQueries({ queryKey: ["posts", "feed"] }),
+        queryClient.invalidateQueries({ queryKey: ["posts", "following"] }),
+        queryClient.invalidateQueries({ queryKey: ["trendingPosts"] }),
+      ]);
+
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["posts", "trending"] }),
+        queryClient.refetchQueries({ queryKey: ["posts", "feed"] }),
+        queryClient.refetchQueries({ queryKey: ["posts", "following"] }),
+        queryClient.refetchQueries({ queryKey: ["trendingPosts"] }),
+      ]);
+
       toast({ description: "Post deleted successfully", variant: "default" });
       onPostReported(id);
     } catch (error) {
@@ -1229,13 +1267,13 @@ const PostCard = ({
                         <Image
                           src={item.url}
                           alt=""
-                         
                           width={1000}
                           height={1000}
-
-                        
                           className="object-cover h-full w-full"
-                          // sizes="(min-width: 768px) 80vw, 100vw"
+                          sizes="(min-width: 768px) 80vw, 100vw"
+                          loading={idx === 0 ? "eager" : "lazy"}
+                          priority={idx === 0}
+                          quality={85}
                         />
                       </div>
                     ) : (
@@ -1345,15 +1383,13 @@ const PostCard = ({
                 <Image
                   src={media[0].url}
                   alt="Post content"
-                 
-                 width={700}
-                 height={800}
+                  width={700}
+                  height={800}
                   className="object-cover h-full w-full"
-                  // sizes="(min-width: 768px) 80vw, 100vw"
-                  // onError={(e) => {
-                  //   const el = e.currentTarget as unknown as HTMLImageElement;
-                  //   if (el && el.style) el.style.display = "none";
-                  // }}
+                  sizes="(min-width: 768px) 80vw, 100vw"
+                  loading="eager"
+                  priority
+                  quality={85}
                 />
               </div>
             ) : (
