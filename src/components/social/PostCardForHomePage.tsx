@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePostModal } from "@/contexts/PostModalProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -144,6 +144,7 @@ const PostCardForHomePage = ({
   const { toast } = useToast();
   const router = useRouter();
   const { openPost } = usePostModal();
+  const queryClient = useQueryClient();
   const [likeAnim, setLikeAnim] = useState(false);
   const [likesAnim, setLikesAnim] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -469,10 +470,18 @@ const PostCardForHomePage = ({
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!isAuthenticated) {
+      router.push("/auth" as any);
+      return;
+    }
     setShareOpen(true);
   };
 
   const handlePostClick = () => {
+    if (!isAuthenticated) {
+      router.push("/auth" as any);
+      return;
+    }
     sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
     openPost(id);
   };
@@ -571,8 +580,44 @@ const PostCardForHomePage = ({
     if (!user) return;
     setDeleteLoading(true);
     try {
-      const { error } = await socialApi.posts.deletePost(id, user.id);
-      if (error) throw error;
+      // Get auth token for API route
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // Delete post via API route
+      const response = await fetch(`/api/social/posts/${id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete post");
+      }
+
+      // Wait a bit for server-side processing
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Invalidate and refetch all post queries to remove the deleted post immediately
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["posts", "trending"] }),
+        queryClient.invalidateQueries({ queryKey: ["posts", "feed"] }),
+        queryClient.invalidateQueries({ queryKey: ["posts", "following"] }),
+        queryClient.invalidateQueries({ queryKey: ["trendingPosts"] }),
+      ]);
+
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["posts", "trending"] }),
+        queryClient.refetchQueries({ queryKey: ["posts", "feed"] }),
+        queryClient.refetchQueries({ queryKey: ["posts", "following"] }),
+        queryClient.refetchQueries({ queryKey: ["trendingPosts"] }),
+      ]);
+
       toast({ description: "Post deleted successfully", variant: "default" });
       if (typeof onPostReported === "function") {
         onPostReported(id);
@@ -715,6 +760,10 @@ const PostCardForHomePage = ({
 
   const handleCommentClick = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!isAuthenticated) {
+      router.push("/auth" as any);
+      return;
+    }
     sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
     openPost(id);
   };
@@ -760,6 +809,10 @@ const PostCardForHomePage = ({
   }, [commentsData]);
 
   const handleAddComment = async () => {
+    if (!isAuthenticated) {
+      router.push("/auth" as any);
+      return;
+    }
     if (!commentInput.trim() || !user) return;
     setCommentLoading(true);
     const optimisticComment: Comment = {
@@ -864,6 +917,10 @@ const PostCardForHomePage = ({
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (!isAuthenticated) {
+                    router.push("/auth" as any);
+                    return;
+                  }
                   sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
                   openPost(id);
                 }}
@@ -946,6 +1003,9 @@ const PostCardForHomePage = ({
                           fill
                           className="object-contain"
                           sizes="(min-width: 768px) 80vw, 100vw"
+                          loading={idx === 0 ? "eager" : "lazy"}
+                          priority={idx === 0}
+                          quality={85}
                         />
                       </div>
                     ) : (
@@ -1095,6 +1155,9 @@ const PostCardForHomePage = ({
                   fill
                   className="object-contain"
                   sizes="(min-width: 768px) 80vw, 100vw"
+                  loading="eager"
+                  priority
+                  quality={85}
                 />
               </div>
             ) : (
@@ -1346,7 +1409,13 @@ const PostCardForHomePage = ({
             <button
               type="button"
               className="mr-1 text-xl"
-              onClick={() => setShowEmojiPicker((v) => !v)}
+              onClick={() => {
+                if (!isAuthenticated) {
+                  router.push("/auth" as any);
+                  return;
+                }
+                setShowEmojiPicker((v) => !v);
+              }}
               tabIndex={-1}
               aria-label="Add emoji"
             >
@@ -1363,13 +1432,24 @@ const PostCardForHomePage = ({
             <input
               type="text"
               className="flex-1 w-full outline-none border-none bg-transparent placeholder-gray-400 text-xs py-1 h-7"
-              placeholder="Add a comment..."
+              placeholder={isAuthenticated ? "Add a comment..." : "Sign in to comment..."}
               value={commentInput}
-              onChange={(e) => setCommentInput(e.target.value)}
+              onChange={(e) => {
+                if (!isAuthenticated) {
+                  router.push("/auth" as any);
+                  return;
+                }
+                setCommentInput(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !commentLoading) handleAddComment();
               }}
-              disabled={commentLoading}
+              onClick={() => {
+                if (!isAuthenticated) {
+                  router.push("/auth" as any);
+                }
+              }}
+              disabled={commentLoading || !isAuthenticated}
             />
             {commentInput.trim() && !commentLoading && (
               <button

@@ -697,13 +697,29 @@ const CreatePost = ({
         user_tag: collaborators.map((c) => c.id).join(","),
       };
 
-      const { data, error } = await supabase
-        .from("posts")
-        .insert(postData)
-        .select("*, profile:user_id(id, avatar_url, username, full_name)")
-        .single();
+      // Get auth token for API route
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (error) throw error;
+      // Create post via API route
+      const response = await fetch("/api/social/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(postData),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to create post");
+      }
+
+      const result = await response.json();
+      const data = result.data;
 
       setContent("");
       setImages([]);

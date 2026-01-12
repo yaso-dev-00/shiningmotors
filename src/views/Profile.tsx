@@ -1,14 +1,24 @@
 "use client";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import NextLink from "next/link";
+import Image from "next/image";
+import useSWR from "swr";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePostModal } from "@/contexts/PostModalProvider";
+import { storeRedirectPath } from "@/lib/utils/routeRemember";
 import {
   Settings,
   LogOut,
@@ -22,6 +32,12 @@ import {
   MapPin,
   Calendar,
   Link as LinkIcon,
+  X,
+  Phone,
+  Shield,
+  Clock,
+  Building2,
+  CheckCircle2,
 } from "lucide-react";
 
 import Header from "@/components/Header";
@@ -36,7 +52,7 @@ import type { PostWithProfile } from "@/integrations/supabase/modules/social";
 const Profile = () => {
   const params = useParams();
   const id = (params?.id as string) ?? "";
-  const { user } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
   const { openPost } = usePostModal();
 
@@ -46,6 +62,8 @@ const Profile = () => {
   const [activeTab, setActiveTab] = useState("posts");
   const [followersModalOpen, setFollowersModalOpen] = useState(false);
   const [followingModalOpen, setFollowingModalOpen] = useState(false);
+  const [profileInfoModalOpen, setProfileInfoModalOpen] = useState(false);
+  const [avatarExpandedOpen, setAvatarExpandedOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [posts, setPosts] = useState<PostWithProfile[]>([]);
@@ -70,8 +88,65 @@ const Profile = () => {
     window.scrollTo(0, 0);
   }, []);
 
+  // Handle authentication and redirects
   useEffect(() => {
-    if (!id || !user?.id) return;
+    if (authLoading) return; // Wait for auth to load
+
+    // If viewing own profile (no id in params) and not authenticated, redirect to auth
+    if (!id && !isAuthenticated) {
+      if (typeof window !== 'undefined' && window.location.pathname !== "/auth") {
+        storeRedirectPath(window.location.pathname);
+      }
+      router.replace("/auth");
+      return;
+    }
+
+    // If no id provided and user is authenticated, redirect to own profile
+    if (!id && isAuthenticated && user?.id) {
+      router.replace(`/profile/${user.id}`);
+      return;
+    }
+  }, [id, isAuthenticated, authLoading, user?.id, router]);
+
+  // SWR fetcher for posts
+  const fetchPostsWithStats = async (userId: string) => {
+    const { data: postsData } = await socialApi.posts.getByUserId(userId);
+    if (!postsData?.length) return [];
+
+    const postsWithStats = await Promise.all(
+      postsData.map(async (post: any) => {
+        const stats = await socialApi.posts.getPostStats(post.id);
+        return { ...post, ...stats } as PostWithProfile & { likes?: number; comments?: number };
+      })
+    );
+    return postsWithStats;
+  };
+
+  // SWR hook for posts caching
+  const {
+    data: cachedPosts = [],
+    isLoading: postsLoading,
+    mutate: mutatePosts,
+  } = useSWR(
+    id && !authLoading ? ['profile-posts', id] : null,
+    () => fetchPostsWithStats(id!),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      dedupingInterval: 5000, // Cache for 5 seconds
+      keepPreviousData: true,
+    }
+  );
+
+  useEffect(() => {
+    // If no id, don't fetch (will be handled by redirect above)
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+
+    // Wait for auth to finish loading before fetching
+    if (authLoading) return;
 
     const fetchData = async () => {
       setLoading(true);
@@ -85,25 +160,23 @@ const Profile = () => {
       }
 
       const statsData = await socialApi.profiles.getStats(id);
-      const followingCheck = await socialApi.follows.checkIfFollowing(
-        user.id,
-        id
-      );
-
-      const { data: postsData } = await socialApi.posts.getByUserId(id);
-      let postsWithStats: (PostWithProfile & { likes?: number; comments?: number })[] = [];
-
-      if (postsData?.length) {
-        postsWithStats = await Promise.all(
-          postsData.map(async (post: any) => {
-            const stats = await socialApi.posts.getPostStats(post.id);
-            return { ...post, ...stats } as PostWithProfile & { likes?: number; comments?: number };
-          })
-        );
+      
+      // Only check following status if user is authenticated and viewing someone else's profile
+      let isFollowingUser = false;
+      if (isAuthenticated && user?.id && user.id !== id) {
+        try {
+          const { data: followData } = await socialApi.follows.checkIfFollowing(
+            user.id,
+            id
+          );
+          isFollowingUser = !!followData;
+        } catch (error) {
+          console.error("Error checking follow status:", error);
+        }
       }
 
-      // Only fetch liked and saved if viewing own profile
-      if (user.id === id) {
+      // Only fetch liked and saved if viewing own profile and authenticated
+      if (isAuthenticated && user?.id && user.id === id) {
         const { data: likedData } = await socialApi.posts.getLikedPostsByUser(
           user.id
         );
@@ -133,15 +206,28 @@ const Profile = () => {
 
       setProfile(profileData);
       setStats(statsData);
-      setIsFollowing(!!followingCheck.data);
-      setPosts(postsWithStats);
+      setIsFollowing(isFollowingUser);
       setLoading(false);
     };
 
     fetchData();
-  }, [id, user?.id]);
+  }, [id, user?.id, isAuthenticated, authLoading]);
+
+  // Update posts from SWR cache
+  useEffect(() => {
+    if (cachedPosts.length > 0) {
+      setPosts(cachedPosts);
+    }
+  }, [cachedPosts]);
 
   const handleFollow = async () => {
+    if (!isAuthenticated) {
+      if (typeof window !== 'undefined' && window.location.pathname !== "/auth") {
+        storeRedirectPath(window.location.pathname);
+      }
+      router.push("/auth");
+      return;
+    }
     if (!user?.id || !id) return;
     try {
       await socialApi.follows.followUser(user.id, id);
@@ -153,6 +239,13 @@ const Profile = () => {
   };
 
   const handleUnfollow = async () => {
+    if (!isAuthenticated) {
+      if (typeof window !== 'undefined' && window.location.pathname !== "/auth") {
+        storeRedirectPath(window.location.pathname);
+      }
+      router.push("/auth");
+      return;
+    }
     if (!user?.id || !id) return;
     try {
       await socialApi.follows.unfollowUser(user.id, id);
@@ -183,56 +276,123 @@ const Profile = () => {
     }
   };
 
-  if (!loading && !profile)
-    return <div className="p-6 text-center">User not found.</div>;
+  // Show loading state while auth is loading or data is loading
+  if (authLoading || (loading && !profile)) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <ProfileSkeleton />
+        <Footer />
+      </div>
+    );
+  }
 
-  if (!profile) return null;
+  // If not authenticated and viewing own profile, show nothing (redirect will happen)
+  if (!id && !isAuthenticated) {
+    return null;
+  }
 
-  const renderPostGrid = (postsArray: (PostWithProfile & { likes?: number; comments?: number })[]) =>
-    postsArray.length === 0 ? (
-      <div className="text-center text-gray-500">No posts available yet.</div>
-    ) : (
-      <div className="grid grid-cols-3 gap-4">
-        {postsArray.map((post: PostWithProfile & { likes?: number; comments?: number }) => (
+  // If no profile found after loading
+  if (!loading && !profile) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="p-6 text-center">User not found.</div>
+        <Footer />
+      </div>
+    );
+  }
+
+  // If still loading profile
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <ProfileSkeleton />
+        <Footer />
+      </div>
+    );
+  }
+
+  const renderPostGrid = (postsArray: (PostWithProfile & { likes?: number; comments?: number })[]) => {
+    if (postsArray.length === 0) {
+      return <div className="text-center text-gray-500">No posts available yet.</div>;
+    }
+
+    return (
+      <div 
+        className="columns-2 sm:columns-3"
+        style={{ columnGap: '2px' }}
+      >
+        {postsArray.map((post: PostWithProfile & { likes?: number; comments?: number }) => {
+          const isVideo = post.media_urls?.[0] && post.media_urls[0].match(/\.(mp4|mov|webm)$/i);
+          return (
           <div
             key={post.id}
-            className="relative cursor-pointer group"
+              className="relative cursor-pointer group overflow-hidden rounded-sm mb-0.5 sm:mb-1 break-inside-avoid"
+              style={{ marginBottom: '2px' }}
              onClick={() => {
                sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
                openPost(post.id);
              }}
           >
-            {post.media_urls?.[0] &&
-            post.media_urls[0].match(/\.(mp4|mov|webm)$/i) ? (
+              {isVideo ? (
+                <>
+                  <div className="relative w-full bg-gray-200" style={{ minHeight: '200px' }}>
               <video
-                src={post.media_urls[0]}
-                className="w-full h-full object-cover rounded-md"
+                      src={post.media_urls?.[0] || ""}
+                      className="w-full h-auto object-cover"
                 controls={false}
                 muted
                 preload="metadata"
-              />
-            ) : (
-              <img
-                src={post.media_urls?.[0]}
+                      onLoadedMetadata={(e) => {
+                        const video = e.currentTarget;
+                        if (video.videoWidth && video.videoHeight) {
+                          const aspectRatio = video.videoHeight / video.videoWidth;
+                          video.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+                        }
+                      }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border-2 border-white/80">
+                        <svg className="w-6 h-6 sm:w-8 sm:h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z"/>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="relative w-full">
+                  <Image
+                    src={post.media_urls?.[0] || ""}
                 alt="Post"
-                className="aspect-square w-full object-cover rounded-md"
-              />
-            )}
-            <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white gap-4 transition">
-              <div className="flex items-center space-x-1">
-                <Heart className="w-5 h-5" />
-                <span>{post.likes}</span>
+                    width={400}
+                    height={400}
+                    className="w-full h-auto object-cover"
+                    loading="lazy"
+                    sizes="(max-width: 640px) 50vw, 33vw"
+                  />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white gap-4 sm:gap-6 transition-opacity duration-200">
+                <div className="flex items-center space-x-1.5">
+                  <Heart className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
+                  <span className="text-sm sm:text-base font-semibold">{(post as any).likes ?? post.likes_count ?? 0}</span>
               </div>
-              <div className="flex items-center space-x-1">
-                <MessageSquare className="w-5 h-5" />
-                <span>{post.comments}</span>
+                <div className="flex items-center space-x-1.5">
+                  <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
+                  <span className="text-sm sm:text-base font-semibold">{(post as any).comments ?? post.comments_count ?? 0}</span>
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     );
+  };
 
+  // @ts-ignore - TypeScript inference issue with complex conditional rendering in Dialog
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -252,25 +412,32 @@ const Profile = () => {
                 ) : (
                   <div className="w-full h-full" />
                 )}
-                <div
-                  className="absolute left-1/2 md:left-16 -translate-x-1/2 md:-translate-x-0 md:translate-y-3/4"
+                <button
+                  type="button"
+                  className="absolute left-1/2 md:left-16 -translate-x-1/2 md:-translate-x-0 md:translate-y-3/4 z-10 p-0 border-none bg-transparent cursor-pointer focus:outline-none rounded-full"
                   style={{ bottom: "-72px", width: "144px", height: "144px" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setProfileInfoModalOpen(true);
+                  }}
+                  aria-label="View profile information"
                 >
-                  <div className="overflow-hidden rounded-full border-4 border-white shadow-2xl bg-white w-full h-full flex items-center justify-center md:mt-7">
-                    <Avatar className="h-36 w-36 mx-auto md:mx-0 ">
+                  <div className="overflow-hidden rounded-full border-4 border-white shadow-2xl bg-white w-full h-full flex items-center justify-center md:mt-7 hover:border-blue-300 transition-colors">
+                    <Avatar className="h-36 w-36 mx-auto md:mx-0 transition-transform duration-300 ease-in-out hover:scale-110 pointer-events-none">
                       <AvatarImage
                         src={profile.avatar_url as string}
                         alt={profile.name as string}
-                        className="object-cover w-full h-full rounded-full transition-transform duration-300 ease-in-out hover:scale-110"
+                        className="object-cover w-full h-full rounded-full pointer-events-none"
                       />
-                      <AvatarFallback>
+                      <AvatarFallback className="pointer-events-none">
                         {(profile.username as string | undefined)?.[0]?.toUpperCase() ||
                           (profile.full_name as string | undefined)?.[0]?.toUpperCase() ||
                           "U"}
                       </AvatarFallback>
                     </Avatar>
                   </div>
-                </div>
+                </button>
               </div>
 
               {/* Profile Content */}
@@ -492,52 +659,8 @@ const Profile = () => {
                 )}
               </TabsList>
 
-              <TabsContent value="posts" className="mt-6">
-                {posts.length === 0 ? (
-                  <div className="text-center text-gray-500">
-                    No posts available yet.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1 pr-2 pl-2">
-                    {posts.map((post) => (
-                      <div
-                        key={post.id}
-                        className="relative cursor-pointer group aspect-square"
-                         onClick={() => {
-               sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
-               openPost(post.id);
-             }}
-                      >
-                        {post.media_urls?.[0] &&
-                        post.media_urls[0].match(/\.(mp4|mov|webm)$/i) ? (
-                          <video
-                            src={post.media_urls[0]}
-                            className="w-full h-full object-cover rounded-md"
-                            controls={false}
-                            muted
-                            preload="metadata"
-                          />
-                        ) : (
-                          <img
-                            src={post.media_urls?.[0]}
-                            alt="Post"
-                            className="w-full h-full object-cover rounded-md"
-                          />
-                        )}
-                        <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white gap-4 transition">
-                          <div className="flex items-center space-x-1">
-                            <Heart className="w-5 h-5" />
-                            <span>{(post as any).likes ?? post.likes_count ?? 0}</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <MessageSquare className="w-5 h-5" />
-                            <span>{(post as any).comments ?? post.comments_count ?? 0}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <TabsContent value="posts" className="mt-6 pr-2 pl-2">
+                {renderPostGrid(posts)}
               </TabsContent>
               {user?.id === id && (
                 <TabsContent value="liked" className="mt-6 pr-2 pl-2">
@@ -552,45 +675,73 @@ const Profile = () => {
                       </p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+                    <div 
+                      className="columns-2 sm:columns-3"
+                      style={{ columnGap: '2px' }}
+                    >
                       {likedPosts.map((item: LikedPostItem) => {
                         const post = item.posts;
                         if (!post) return null;
                         const likes = item.likes ?? 0;
                         const comments = item.comments ?? 0;
+                        const isVideo = post.media_urls?.[0] && post.media_urls[0].match(/\.(mp4|mov|webm)$/i);
                         return (
                           <div
                             key={post.id}
-                            className="relative group cursor-pointer min-h-[200px] md:min-h-[400px]"
+                            className="relative group cursor-pointer overflow-hidden rounded-sm mb-0.5 sm:mb-1 break-inside-avoid"
+                            style={{ marginBottom: '2px' }}
                              onClick={() => {
                sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
                openPost(post.id);
              }}
                           >
-                            {post.media_urls?.[0] &&
-                            post.media_urls[0].match(/\.(mp4|mov|webm)$/i) ? (
+                            {isVideo ? (
+                              <>
+                                <div className="relative w-full bg-gray-200" style={{ minHeight: '200px' }}>
                               <video
-                                src={post.media_urls[0]}
-                                className="w-full h-full object-cover aspect-square rounded-md"
+                                    src={post.media_urls?.[0] || ""}
+                                    className="w-full h-auto object-cover"
                                 controls={false}
                                 muted
                                 preload="metadata"
-                              />
+                                    onLoadedMetadata={(e) => {
+                                      const video = e.currentTarget;
+                                      if (video.videoWidth && video.videoHeight) {
+                                        const aspectRatio = video.videoHeight / video.videoWidth;
+                                        video.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+                                      }
+                                    }}
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border-2 border-white/80">
+                                      <svg className="w-6 h-6 sm:w-8 sm:h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z"/>
+                                      </svg>
+                                    </div>
+                                  </div>
+                                </div>
+                              </>
                             ) : (
-                              <img
+                              <div className="relative w-full">
+                                <Image
                                 src={post.media_urls?.[0] || ""}
                                 alt="Post"
-                                className="w-full h-full object-cover aspect-square rounded-md"
-                              />
-                            )}
-                            <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white space-x-4 transition">
-                              <div className="flex items-center space-x-1">
-                                <Heart size={18} />
-                                <span>{likes}</span>
+                                  width={400}
+                                  height={400}
+                                  className="w-full h-auto object-cover"
+                                  loading="lazy"
+                                  sizes="(max-width: 640px) 50vw, 33vw"
+                                />
                               </div>
-                              <div className="flex items-center space-x-1">
-                                <MessageSquare size={18} />
-                                <span>{comments}</span>
+                            )}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white gap-4 sm:gap-6 transition-opacity duration-200">
+                              <div className="flex items-center space-x-1.5">
+                                <Heart className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
+                                <span className="text-sm sm:text-base font-semibold">{likes}</span>
+                              </div>
+                              <div className="flex items-center space-x-1.5">
+                                <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
+                                <span className="text-sm sm:text-base font-semibold">{comments}</span>
                               </div>
                             </div>
                           </div>
@@ -615,46 +766,72 @@ const Profile = () => {
                       </p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1">
+                    <div 
+                      className="columns-2 sm:columns-3"
+                      style={{ columnGap: '2px' }}
+                    >
                       {savedPosts.map((item: SavedPostItem) => {
                         const post = item.posts;
                         if (!post) return null;
                         const likes = item.likes ?? 0;
                         const comments = item.comments ?? 0;
+                        const isVideo = post.media_urls?.[0] && post.media_urls[0].match(/\.(mp4|mov|webm)$/i);
                         return (
                           <div
                             key={post.id}
-                            className="relative group cursor-pointer min-h-[200px] md:min-h-[400px]"
+                            className="relative group cursor-pointer overflow-hidden rounded-sm mb-0.5 sm:mb-1 break-inside-avoid"
+                            style={{ marginBottom: '2px' }}
                             onClick={() =>
                                router.push(`/social/post/${post.id}`)
                             }
                           >
-                            {post.media_urls?.[0] &&
-                            post.media_urls[0].match(
-                              /\.(mp4|mov|webm)$/i
-                            ) ? (
-                              <video
-                                src={post.media_urls[0]}
-                                className="w-full h-full object-cover aspect-square rounded-md"
-                                controls={false}
-                                muted
-                                preload="metadata"
-                              />
+                            {isVideo ? (
+                              <>
+                                <div className="relative w-full bg-gray-200" style={{ minHeight: '200px' }}>
+                                  <video
+                                    src={post.media_urls?.[0] || ""}
+                                    className="w-full h-auto object-cover"
+                                    controls={false}
+                                    muted
+                                    preload="metadata"
+                                    onLoadedMetadata={(e) => {
+                                      const video = e.currentTarget;
+                                      if (video.videoWidth && video.videoHeight) {
+                                        const aspectRatio = video.videoHeight / video.videoWidth;
+                                        video.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+                                      }
+                                    }}
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border-2 border-white/80">
+                                      <svg className="w-6 h-6 sm:w-8 sm:h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z"/>
+                                      </svg>
+                                    </div>
+                                  </div>
+                                </div>
+                              </>
                             ) : (
-                              <img
-                                src={post.media_urls?.[0] || ""}
-                                alt="Post"
-                                className="w-full h-full object-cover aspect-square rounded-md"
-                              />
-                            )}
-                            <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white space-x-4 transition">
-                              <div className="flex items-center space-x-1">
-                                <Heart size={18} />
-                                <span>{likes}</span>
+                              <div className="relative w-full">
+                                <Image
+                                  src={post.media_urls?.[0] || ""}
+                                  alt="Post"
+                                  width={400}
+                                  height={400}
+                                  className="w-full h-auto object-cover"
+                                  loading="lazy"
+                                  sizes="(max-width: 640px) 50vw, 33vw"
+                                />
                               </div>
-                              <div className="flex items-center space-x-1">
-                                <MessageSquare size={18} />
-                                <span>{comments}</span>
+                            )}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white gap-4 sm:gap-6 transition-opacity duration-200">
+                              <div className="flex items-center space-x-1.5">
+                                <Heart className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
+                                <span className="text-sm sm:text-base font-semibold">{likes}</span>
+                              </div>
+                              <div className="flex items-center space-x-1.5">
+                                <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
+                                <span className="text-sm sm:text-base font-semibold">{comments}</span>
                               </div>
                             </div>
                           </div>
@@ -684,6 +861,240 @@ const Profile = () => {
           />
         </>
       )}
+
+       <>
+          <Dialog open={profileInfoModalOpen} onOpenChange={setProfileInfoModalOpen}>
+        <DialogContent className="max-w-md sm:max-w-lg p-0 max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0">
+            <DialogTitle className="text-xl font-bold">
+              Profile Information
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1 min-h-0 scrollbar-hide">
+            {profile !== null ? (
+              <div className="space-y-6 px-6 pb-6">
+                {/* Avatar - Clickable */}
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setAvatarExpandedOpen(true)}
+                    className="cursor-pointer focus:outline-none rounded-full transition-transform hover:scale-105"
+                  >
+                    <Avatar className="h-32 w-32 border-4 border-gray-200 shadow-lg">
+                      <AvatarImage
+                        src={profile?.avatar_url as string}
+                        alt={profile?.full_name as string}
+                        className="object-cover"
+                      />
+                      <AvatarFallback className="text-3xl">
+                        {(profile?.username as string | undefined)?.[0]?.toUpperCase() ||
+                          (profile?.full_name as string | undefined)?.[0]?.toUpperCase() ||
+                          "U"}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </div>
+
+                {/* Name and Username */}
+                <div className="text-center space-y-2">
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
+                    <h2 className="text-2xl font-bold">
+                      {(profile?.full_name as string | undefined) || "User"}
+                    </h2>
+                    {(profile?.is_verified as boolean | undefined) ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-blue-500 text-white text-xs px-2 h-auto"
+                      >
+                        verified
+                      </Badge>
+                    ) : null}
+                  </div>
+                  {(profile?.username as string | undefined) ? (
+                    <p className="text-gray-500 text-base">@{profile.username as string}</p>
+                  ) : null}
+                </div>
+
+                <Separator className="my-4" />
+
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-4 text-center py-2">
+                  <div className="space-y-1">
+                    <div className="text-2xl font-bold text-gray-900">{stats.posts}</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide">Posts</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-2xl font-bold text-gray-900">{stats.followers}</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide">Followers</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-2xl font-bold text-gray-900">{stats.following}</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide">Following</div>
+                  </div>
+                </div>
+
+                {/* Bio */}
+                {(profile?.bio as string | undefined) ? (
+                  <>
+                    <Separator className="my-4" />
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-gray-900">Bio</h3>
+                      <p className="text-gray-700 leading-relaxed">{profile.bio as string}</p>
+                    </div>
+                  </>
+                ) : null}
+
+                {/* Tags */}
+                {(() => {
+                  const tags = profile.tag;
+                  if (Array.isArray(tags) && tags.length > 0) {
+                    return (
+                      <>
+                        <Separator className="my-4" />
+                        <div className="space-y-2">
+                          <h3 className="font-semibold text-gray-900">Tags</h3>
+                          <div className="flex flex-wrap gap-2">
+                            {(tags as string[]).map((tag: string, index: number) => (
+                              <Badge key={index} variant="secondary" className="text-sm px-3 py-1">
+                                #{tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Contact Information */}
+                <Separator className="my-4" />
+                <div className="space-y-3 text-sm">
+                  <h3 className="font-semibold text-gray-900 mb-2">Contact Information</h3>
+                  {(profile?.location as string | undefined) ? (
+                    <div className="flex items-center text-gray-600">
+                      <MapPin className="mr-3 h-4 w-4 shrink-0 text-gray-400" />
+                      <span>{profile.location as string}</span>
+                    </div>
+                  ) : null}
+                  {(profile?.mobile_phone as string | undefined) && (profile?.phone_verified as boolean | undefined) ? (
+                    <div className="flex items-center text-gray-600">
+                      <Phone className="mr-3 h-4 w-4 shrink-0 text-gray-400" />
+                      <span>{profile.mobile_phone as string}</span>
+                      <div title="Verified">
+                        <CheckCircle2 className="ml-2 h-3 w-3 text-green-500" />
+                      </div>
+                    </div>
+                  ) : null}
+                  {(profile?.website as string | undefined) ? (
+                    <div className="flex items-center text-gray-600">
+                      <LinkIcon className="mr-3 h-4 w-4 shrink-0 text-gray-400" />
+                      <a
+                        href={`https://${profile.website}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:underline break-all"
+                      >
+                        {profile.website as string}
+                      </a>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Account Information */}
+                <Separator className="my-4" />
+                <div className="space-y-3 text-sm">
+                  <h3 className="font-semibold text-gray-900 mb-2">Account Information</h3>
+                  {(profile?.joined_date as string | undefined) ? (
+                    <div className="flex items-center text-gray-600">
+                      <Calendar className="mr-3 h-4 w-4 shrink-0 text-gray-400" />
+                      <span>Joined {profile.joined_date as string}</span>
+                    </div>
+                  ) : null}
+                  {(profile?.last_seen as string | undefined) ? (
+                    <div className="flex items-center text-gray-600">
+                      <Clock className="mr-3 h-4 w-4 shrink-0 text-gray-400" />
+                      <span>Last seen {new Date(profile.last_seen as string).toLocaleDateString()}</span>
+                    </div>
+                  ) : null}
+                  {(profile?.role as string | undefined) ? (
+                    <div className="flex items-center text-gray-600">
+                      <Shield className="mr-3 h-4 w-4 shrink-0 text-gray-400" />
+                      <span className="capitalize">{profile.role as string}</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Vendor Information */}
+                {(profile?.is_vendor as boolean | undefined) ? (
+                  <>
+                    <Separator className="my-4" />
+                    <div className="space-y-3 text-sm">
+                      <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-gray-400" />
+                        Vendor Information
+                      </h3>
+                      <div className="flex items-center text-gray-600">
+                        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                          Verified Vendor
+                        </Badge>
+                      </div>
+                      {(() => {
+                        const categories = profile.vendor_categories;
+                        if (Array.isArray(categories) && categories.length > 0) {
+                          return (
+                            <div className="mt-2">
+                              <p className="text-xs text-gray-500 mb-1">Categories:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {(categories as string[]).map((category: string, index: number) => (
+                                  <Badge key={index} variant="secondary" className="text-xs">
+                                    {category}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : (
+              <div className="py-12 text-center text-gray-500">
+                Loading profile information...
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog> 
+       
+       </>
+        
+<>
+      
+      {profile?.avatar_url && (
+        <Dialog open={avatarExpandedOpen} onOpenChange={setAvatarExpandedOpen}>
+          <DialogContent className="max-w-4xl p-0 bg-black border-none overflow-hidden">
+            <div className="relative flex items-center justify-center min-h-[60vh] max-h-[90vh]">
+              {/* Close Button */}
+              <button
+                onClick={() => setAvatarExpandedOpen(false)}
+                className="absolute top-4 right-4 z-50 w-10 h-10 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center text-white transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <img
+                src={profile.avatar_url as string}
+                alt={profile?.full_name as string || "Profile picture"}
+                className="max-w-full max-h-[90vh] object-contain"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}</>
       <Footer />
     </div>
   );
