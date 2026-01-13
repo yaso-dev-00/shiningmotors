@@ -149,15 +149,19 @@ export const shopApi = {
     delete: (id: string) => supabase.from("products").delete().eq("id", id),
   },
   cartItems: {
-    getByUserId: (userId: string) =>
-      supabase
+    getByUserId: (userId: string, bypassCache?: boolean) => {
+      // Always order by created_at desc to ensure consistent ordering
+      // The bypassCache parameter is kept for future use if needed
+      return supabase
         .from("cart_items")
         .select(
           `
         *
       `
         )
-        .eq("user_id", userId),
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+    },
     count: (userId: string) =>
       supabase
         .from("cart_items")
