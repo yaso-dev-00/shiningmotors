@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAuthenticatedServerClient } from "@/lib/supabase-server";
 import { headers } from "next/headers";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 export async function POST(req: NextRequest) {
   try {
@@ -78,9 +79,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Revalidate paths to ensure fresh data on next request
-    // Note: We removed unstable_cache, so revalidateTag is not needed
-    // React Query on client side will handle caching
+    // Revalidate the author's profile page to update post count and show new post
+    try {
+      revalidatePath(`/profile/${user_id}`);
+      // Also revalidate the profile cache tags
+      revalidateTag(`profile-${user_id}`, "max");
+      revalidateTag(`profile-stats-${user_id}`, "max");
+      revalidateTag(`profile-posts-${user_id}`, "max");
+    } catch (revalidateError) {
+      // Log but don't fail the request if revalidation fails
+      console.error("Error revalidating profile after post creation:", revalidateError);
+    }
 
     return NextResponse.json({
       success: true,
