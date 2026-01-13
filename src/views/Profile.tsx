@@ -49,24 +49,36 @@ import { socialApi } from "@/integrations/supabase/modules/social";
 import { ProfileSkeleton } from "@/lib/profileSkeliton";
 import type { PostWithProfile } from "@/integrations/supabase/modules/social";
 
-const Profile = () => {
+interface ProfileProps {
+  initialProfile?: Record<string, unknown> | null;
+  initialStats?: { posts: number; followers: number; following: number };
+  initialPosts?: (PostWithProfile & { likes?: number; comments?: number })[];
+  profileId?: string;
+}
+
+const Profile = ({ 
+  initialProfile = null, 
+  initialStats = { posts: 0, followers: 0, following: 0 },
+  initialPosts = [],
+  profileId: propProfileId
+}: ProfileProps) => {
   const params = useParams();
-  const id = (params?.id as string) ?? "";
+  const id = propProfileId ?? (params?.id as string) ?? "";
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
   const { openPost } = usePostModal();
 
-  const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
-  const [stats, setStats] = useState({ posts: 0, followers: 0, following: 0 });
+  const [profile, setProfile] = useState<Record<string, unknown> | null>(initialProfile);
+  const [stats, setStats] = useState(initialStats);
   const [isFollowing, setIsFollowing] = useState(false);
   const [activeTab, setActiveTab] = useState("posts");
   const [followersModalOpen, setFollowersModalOpen] = useState(false);
   const [followingModalOpen, setFollowingModalOpen] = useState(false);
   const [profileInfoModalOpen, setProfileInfoModalOpen] = useState(false);
   const [avatarExpandedOpen, setAvatarExpandedOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialProfile);
 
-  const [posts, setPosts] = useState<PostWithProfile[]>([]);
+  const [posts, setPosts] = useState<PostWithProfile[]>(initialPosts);
   interface LikedPostItem {
     post_id: string;
     posts: PostWithProfile;
@@ -83,6 +95,7 @@ const Profile = () => {
   const [savedPosts, setSavedPosts] = useState<SavedPostItem[]>([]);
 
   const [showFullBio, setShowFullBio] = useState(false);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -122,9 +135,9 @@ const Profile = () => {
     return postsWithStats;
   };
 
-  // SWR hook for posts caching
+  // SWR hook for posts caching - use initialPosts as fallback data
   const {
-    data: cachedPosts = [],
+    data: cachedPosts = initialPosts,
     isLoading: postsLoading,
     mutate: mutatePosts,
   } = useSWR(
@@ -135,6 +148,7 @@ const Profile = () => {
       revalidateOnReconnect: true,
       dedupingInterval: 5000, // Cache for 5 seconds
       keepPreviousData: true,
+      fallbackData: initialPosts, // Use server-rendered posts as initial data
     }
   );
 
@@ -142,6 +156,64 @@ const Profile = () => {
     // If no id, don't fetch (will be handled by redirect above)
     if (!id) {
       setLoading(false);
+      return;
+    }
+
+    // If we have initial data from server, skip fetching and only fetch client-specific data
+    if (initialProfile && initialStats) {
+      setLoading(false);
+      
+      // Still need to check follow status and fetch liked/saved posts on client
+      if (authLoading) return;
+
+      const fetchClientData = async () => {
+        // Only check following status if user is authenticated and viewing someone else's profile
+        let isFollowingUser = false;
+        if (isAuthenticated && user?.id && user.id !== id) {
+          try {
+            const { data: followData } = await socialApi.follows.checkIfFollowing(
+              user.id,
+              id
+            );
+            isFollowingUser = !!followData;
+          } catch (error) {
+            console.error("Error checking follow status:", error);
+          }
+        }
+
+        // Only fetch liked and saved if viewing own profile and authenticated
+        if (isAuthenticated && user?.id && user.id === id) {
+          const { data: likedData } = await socialApi.posts.getLikedPostsByUser(
+            user.id
+          );
+          const { data: savedData } = await socialApi.posts.getSavedPostsByUser(
+            user.id
+          );
+
+          const likedWithStats = await Promise.all(
+            (likedData || []).map(async (post: any) => {
+              if (!post?.post_id) return null;
+              const stats = await socialApi.posts.getPostStats(post.post_id);
+              return { ...post, ...stats } as LikedPostItem;
+            })
+          ).then(results => results.filter((item): item is LikedPostItem => item !== null));
+
+          const savedWithStats = await Promise.all(
+            (savedData || []).map(async (post: any) => {
+              if (!post?.post_id) return null;
+              const stats = await socialApi.posts.getPostStats(post.post_id);
+              return { ...post, ...stats } as SavedPostItem;
+            })
+          ).then(results => results.filter((item): item is SavedPostItem => item !== null));
+
+          setLikedPosts(likedWithStats);
+          setSavedPosts(savedWithStats);
+        }
+
+        setIsFollowing(isFollowingUser);
+      };
+
+      fetchClientData();
       return;
     }
 
@@ -211,14 +283,17 @@ const Profile = () => {
     };
 
     fetchData();
-  }, [id, user?.id, isAuthenticated, authLoading]);
+  }, [id, user?.id, isAuthenticated, authLoading, initialProfile, initialStats]);
 
-  // Update posts from SWR cache
+  // Update posts from SWR cache (only if we have new data from SWR)
   useEffect(() => {
-    if (cachedPosts.length > 0) {
+    if (cachedPosts && cachedPosts.length > 0) {
       setPosts(cachedPosts);
+    } else if (initialPosts && initialPosts.length > 0 && posts.length === 0) {
+      // Fallback to initialPosts if SWR hasn't loaded yet
+      setPosts(initialPosts);
     }
-  }, [cachedPosts]);
+  }, [cachedPosts, initialPosts, posts.length]);
 
   const handleFollow = async () => {
     if (!isAuthenticated) {
@@ -314,9 +389,27 @@ const Profile = () => {
     );
   }
 
+  const handleImageError = (postId: string) => {
+    setFailedImages((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(postId);
+      return newSet;
+    });
+  };
+
+  // Helper to check if post has valid media
+  const hasValidMedia = (post: PostWithProfile) => {
+    const hasMedia = post.media_urls && post.media_urls.length > 0 && post.media_urls[0];
+    const notFailed = !failedImages.has(post.id);
+    return hasMedia && notFailed;
+  };
+
   const renderPostGrid = (postsArray: (PostWithProfile & { likes?: number; comments?: number })[]) => {
-    if (postsArray.length === 0) {
-      return <div className="text-center text-gray-500">No posts available yet.</div>;
+    // Filter out posts without valid media URLs or failed images
+    const validPosts = postsArray.filter((post) => hasValidMedia(post));
+
+    if (validPosts.length === 0) {
+      return <div className="text-center text-gray-500 py-8">No posts available yet.</div>;
     }
 
     return (
@@ -324,13 +417,16 @@ const Profile = () => {
         className="columns-2 sm:columns-3"
         style={{ columnGap: '2px' }}
       >
-        {postsArray.map((post: PostWithProfile & { likes?: number; comments?: number }) => {
-          const isVideo = post.media_urls?.[0] && post.media_urls[0].match(/\.(mp4|mov|webm)$/i);
+        {validPosts.map((post: PostWithProfile & { likes?: number; comments?: number }) => {
+          const mediaUrl = post.media_urls?.[0];
+          if (!mediaUrl) return null;
+          
+          const isVideo = mediaUrl.match(/\.(mp4|mov|webm)$/i);
           return (
           <div
             key={post.id}
               className="relative cursor-pointer group overflow-hidden rounded-sm mb-0.5 sm:mb-1 break-inside-avoid"
-              style={{ marginBottom: '2px' }}
+              style={{ marginBottom: '2px', display: failedImages.has(post.id) ? 'none' : 'block' }}
              onClick={() => {
                sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
                openPost(post.id);
@@ -340,7 +436,7 @@ const Profile = () => {
                 <>
                   <div className="relative w-full bg-gray-200" style={{ minHeight: '200px' }}>
               <video
-                      src={post.media_urls?.[0] || ""}
+                      src={mediaUrl}
                       className="w-full h-auto object-cover"
                 controls={false}
                 muted
@@ -352,6 +448,7 @@ const Profile = () => {
                           video.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
                         }
                       }}
+                      onError={() => handleImageError(post.id)}
                     />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border-2 border-white/80">
@@ -363,15 +460,27 @@ const Profile = () => {
                   </div>
                 </>
               ) : (
-                <div className="relative w-full">
+                <div className="relative w-full" style={{ display: failedImages.has(post.id) ? 'none' : 'block' }}>
                   <Image
-                    src={post.media_urls?.[0] || ""}
+                    src={mediaUrl}
                 alt="Post"
                     width={400}
                     height={400}
                     className="w-full h-auto object-cover"
                     loading="lazy"
                     sizes="(max-width: 640px) 50vw, 33vw"
+                    onError={() => handleImageError(post.id)}
+                    onLoadingComplete={() => {
+                      // Image loaded successfully, ensure it's visible
+                      if (failedImages.has(post.id)) {
+                        setFailedImages((prev) => {
+                          const newSet = new Set(prev);
+                          newSet.delete(post.id);
+                          return newSet;
+                        });
+                      }
+                    }}
+                    unoptimized={mediaUrl.startsWith('data:') || mediaUrl.startsWith('blob:')}
                   />
                 </div>
               )}
@@ -679,17 +788,22 @@ const Profile = () => {
                       className="columns-2 sm:columns-3"
                       style={{ columnGap: '2px' }}
                     >
-                      {likedPosts.map((item: LikedPostItem) => {
+                      {likedPosts
+                        .filter((item) => item.posts && hasValidMedia(item.posts))
+                        .map((item: LikedPostItem) => {
                         const post = item.posts;
                         if (!post) return null;
+                        const mediaUrl = post.media_urls?.[0];
+                        if (!mediaUrl) return null;
+                        
                         const likes = item.likes ?? 0;
                         const comments = item.comments ?? 0;
-                        const isVideo = post.media_urls?.[0] && post.media_urls[0].match(/\.(mp4|mov|webm)$/i);
+                        const isVideo = mediaUrl.match(/\.(mp4|mov|webm)$/i);
                         return (
                           <div
                             key={post.id}
                             className="relative group cursor-pointer overflow-hidden rounded-sm mb-0.5 sm:mb-1 break-inside-avoid"
-                            style={{ marginBottom: '2px' }}
+                            style={{ marginBottom: '2px', display: failedImages.has(post.id) ? 'none' : 'block' }}
                              onClick={() => {
                sessionStorage.setItem('modalScrollPosition', String(window.scrollY));
                openPost(post.id);
@@ -699,7 +813,7 @@ const Profile = () => {
                               <>
                                 <div className="relative w-full bg-gray-200" style={{ minHeight: '200px' }}>
                               <video
-                                    src={post.media_urls?.[0] || ""}
+                                    src={mediaUrl}
                                     className="w-full h-auto object-cover"
                                 controls={false}
                                 muted
@@ -711,6 +825,7 @@ const Profile = () => {
                                         video.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
                                       }
                                     }}
+                                    onError={() => handleImageError(post.id)}
                                   />
                                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                     <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border-2 border-white/80">
@@ -722,15 +837,26 @@ const Profile = () => {
                                 </div>
                               </>
                             ) : (
-                              <div className="relative w-full">
+                              <div className="relative w-full" style={{ display: failedImages.has(post.id) ? 'none' : 'block' }}>
                                 <Image
-                                src={post.media_urls?.[0] || ""}
+                                src={mediaUrl}
                                 alt="Post"
                                   width={400}
                                   height={400}
                                   className="w-full h-auto object-cover"
                                   loading="lazy"
                                   sizes="(max-width: 640px) 50vw, 33vw"
+                                  onError={() => handleImageError(post.id)}
+                                  onLoadingComplete={() => {
+                                    if (failedImages.has(post.id)) {
+                                      setFailedImages((prev) => {
+                                        const newSet = new Set(prev);
+                                        newSet.delete(post.id);
+                                        return newSet;
+                                      });
+                                    }
+                                  }}
+                                  unoptimized={mediaUrl.startsWith('data:') || mediaUrl.startsWith('blob:')}
                                 />
                               </div>
                             )}
@@ -770,17 +896,22 @@ const Profile = () => {
                       className="columns-2 sm:columns-3"
                       style={{ columnGap: '2px' }}
                     >
-                      {savedPosts.map((item: SavedPostItem) => {
+                      {savedPosts
+                        .filter((item) => item.posts && hasValidMedia(item.posts))
+                        .map((item: SavedPostItem) => {
                         const post = item.posts;
                         if (!post) return null;
+                        const mediaUrl = post.media_urls?.[0];
+                        if (!mediaUrl) return null;
+                        
                         const likes = item.likes ?? 0;
                         const comments = item.comments ?? 0;
-                        const isVideo = post.media_urls?.[0] && post.media_urls[0].match(/\.(mp4|mov|webm)$/i);
+                        const isVideo = mediaUrl.match(/\.(mp4|mov|webm)$/i);
                         return (
                           <div
                             key={post.id}
                             className="relative group cursor-pointer overflow-hidden rounded-sm mb-0.5 sm:mb-1 break-inside-avoid"
-                            style={{ marginBottom: '2px' }}
+                            style={{ marginBottom: '2px', display: failedImages.has(post.id) ? 'none' : 'block' }}
                             onClick={() =>
                                router.push(`/social/post/${post.id}`)
                             }
@@ -789,7 +920,7 @@ const Profile = () => {
                               <>
                                 <div className="relative w-full bg-gray-200" style={{ minHeight: '200px' }}>
                                   <video
-                                    src={post.media_urls?.[0] || ""}
+                                    src={mediaUrl}
                                     className="w-full h-auto object-cover"
                                     controls={false}
                                     muted
@@ -801,6 +932,7 @@ const Profile = () => {
                                         video.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
                                       }
                                     }}
+                                    onError={() => handleImageError(post.id)}
                                   />
                                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                     <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border-2 border-white/80">
@@ -812,15 +944,26 @@ const Profile = () => {
                                 </div>
                               </>
                             ) : (
-                              <div className="relative w-full">
+                              <div className="relative w-full" style={{ display: failedImages.has(post.id) ? 'none' : 'block' }}>
                                 <Image
-                                  src={post.media_urls?.[0] || ""}
+                                  src={mediaUrl}
                                   alt="Post"
                                   width={400}
                                   height={400}
                                   className="w-full h-auto object-cover"
                                   loading="lazy"
                                   sizes="(max-width: 640px) 50vw, 33vw"
+                                  onError={() => handleImageError(post.id)}
+                                  onLoadingComplete={() => {
+                                    if (failedImages.has(post.id)) {
+                                      setFailedImages((prev) => {
+                                        const newSet = new Set(prev);
+                                        newSet.delete(post.id);
+                                        return newSet;
+                                      });
+                                    }
+                                  }}
+                                  unoptimized={mediaUrl.startsWith('data:') || mediaUrl.startsWith('blob:')}
                                 />
                               </div>
                             )}
@@ -865,14 +1008,14 @@ const Profile = () => {
        <>
           <Dialog open={profileInfoModalOpen} onOpenChange={setProfileInfoModalOpen}>
         <DialogContent className="max-w-md sm:max-w-lg p-0 max-h-[90vh] flex flex-col overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0">
+          <DialogHeader className="px-4 pt-4 pb-3 flex-shrink-0">
             <DialogTitle className="text-xl font-bold">
               Profile Information
             </DialogTitle>
           </DialogHeader>
           <div className="overflow-y-auto flex-1 min-h-0 scrollbar-hide">
             {profile !== null ? (
-              <div className="space-y-6 px-6 pb-6">
+              <div className="space-y-4 px-4 pb-4">
                 {/* Avatar - Clickable */}
                 <div className="flex justify-center">
                   <button
@@ -915,7 +1058,7 @@ const Profile = () => {
                   ) : null}
                 </div>
 
-                <Separator className="my-4" />
+                <Separator className="my-3" />
 
                 {/* Stats */}
                 <div className="grid grid-cols-3 gap-4 text-center py-2">
@@ -936,7 +1079,7 @@ const Profile = () => {
                 {/* Bio */}
                 {(profile?.bio as string | undefined) ? (
                   <>
-                    <Separator className="my-4" />
+                    <Separator className="my-3" />
                     <div className="space-y-2">
                       <h3 className="font-semibold text-gray-900">Bio</h3>
                       <p className="text-gray-700 leading-relaxed">{profile.bio as string}</p>
@@ -950,7 +1093,7 @@ const Profile = () => {
                   if (Array.isArray(tags) && tags.length > 0) {
                     return (
                       <>
-                        <Separator className="my-4" />
+                        <Separator className="my-3" />
                         <div className="space-y-2">
                           <h3 className="font-semibold text-gray-900">Tags</h3>
                           <div className="flex flex-wrap gap-2">
@@ -968,7 +1111,7 @@ const Profile = () => {
                 })()}
 
                 {/* Contact Information */}
-                <Separator className="my-4" />
+                <Separator className="my-3" />
                 <div className="space-y-3 text-sm">
                   <h3 className="font-semibold text-gray-900 mb-2">Contact Information</h3>
                   {(profile?.location as string | undefined) ? (
@@ -1002,7 +1145,7 @@ const Profile = () => {
                 </div>
 
                 {/* Account Information */}
-                <Separator className="my-4" />
+                <Separator className="my-3" />
                 <div className="space-y-3 text-sm">
                   <h3 className="font-semibold text-gray-900 mb-2">Account Information</h3>
                   {(profile?.joined_date as string | undefined) ? (
@@ -1028,7 +1171,7 @@ const Profile = () => {
                 {/* Vendor Information */}
                 {(profile?.is_vendor as boolean | undefined) ? (
                   <>
-                    <Separator className="my-4" />
+                    <Separator className="my-3" />
                     <div className="space-y-3 text-sm">
                       <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
                         <Building2 className="h-4 w-4 text-gray-400" />
