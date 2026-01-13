@@ -174,105 +174,83 @@ export const CartProvider = ({ children }: CartProviderProps) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, session } = useAuth();
   const lastFetchedUserIdRef = useRef<string | null>(null);
   const didInitGuestRef = useRef(false);
   const hasMergedCartRef = useRef(false);
 
-  // Cache for sim products to avoid repeated API calls
-  const simProductsCacheRef = useRef<Map<string, SimProductLite>>(new Map());
-  const simProductsIdsCacheRef = useRef<string[]>([]);
+  const normalizeCartItems = useCallback((data: any[]): CartItem[] => {
+    if (!Array.isArray(data)) return [];
+    return data.map((item) => {
+      const product = item?.product || item?.sim_product || {};
+      const images =
+        (product?.images as string[] | undefined) ||
+        (product?.image_url as string[] | undefined) ||
+        [];
+      return {
+        id: item.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        name: product.name || "Unknown Product",
+        price: product.price || 0,
+        image: Array.isArray(images) ? images[0] || "" : "",
+        gst_percentage: product.gst_percentage ?? 0,
+        inventory: product.inventory ?? product.stock ?? product.quantity ?? 0,
+      };
+    });
+  }, []);
+
+  // Helper to get headers with Authorization token
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+    };
+    const accessToken = session?.access_token;
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+    return headers;
+  }, [session]);
+
+  const fetchCartItemsFromApi = useCallback(async () => {
+    // Get access token from session
+    const accessToken = session?.access_token;
+    
+    // Add timestamp to bypass any browser or network caching
+    const headers: HeadersInit = {
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    };
+    
+    // Add Authorization header if we have a token
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+    
+    const res = await fetch(`/api/cart?_t=${Date.now()}`, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+      headers,
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error || "Failed to fetch cart");
+    }
+
+    const body = await res.json();
+    return normalizeCartItems(body?.data || []);
+  }, [normalizeCartItems, session]);
 
   const fetchCartItems = useCallback(async () => {
-    if (!user) return;
+    if (!user || !isAuthenticated) return;
 
     try {
       setIsLoading(true);
-
-      // Use cached sim products if available, otherwise fetch them
-      let simProducts: SimProductLite[] = [];
-      let productsIds: string[] = [];
-
-      if (simProductsIdsCacheRef.current.length === 0) {
-        const { data: getSimProducts, error: simError } =
-          await simRacingApi.shop.getProducts();
-        if (simError) throw simError;
-        simProducts = getSimProducts as SimProductLite[];
-        productsIds = simProducts.map((item) => item.id);
-
-        // Cache the sim products
-        simProducts.forEach((product) => {
-          simProductsCacheRef.current.set(product.id, product);
-        });
-        simProductsIdsCacheRef.current = productsIds;
-      } else {
-        productsIds = simProductsIdsCacheRef.current;
-      }
-
-      const { data, error } = await shopApi.cartItems.getByUserId(user.id);
-
-      if (error) throw error;
-
-      if (data) {
-        // For each cart item, fetch the product details
-        const cartItemsWithDetails = await Promise.all(
-          (data as DbCartItem[]).map(async (item) => {
-            if (productsIds.includes(item.product_id)) {
-              // Use cached product if available
-              const cachedProduct = simProductsCacheRef.current.get(
-                item.product_id
-              );
-              if (cachedProduct) {
-                return {
-                  id: item.id,
-                  product_id: item.product_id,
-                  quantity: item.quantity,
-                  name: cachedProduct.name || "Unknown Product",
-                  price: cachedProduct.price || 0,
-                  image: cachedProduct.image_url?.[0] || "",
-                  gst_percentage: cachedProduct.gst_percentage || 0,
-                  inventory: cachedProduct.inventory || 0,
-                };
-              }
-
-              // Fallback to API call if not cached
-              const { data: product } = await simRacingApi.shop.getProductById(
-                item.product_id
-              );
-              return {
-                id: item.id,
-                product_id: item.product_id,
-                quantity: item.quantity,
-                name:
-                  (product as SimProductLite | null)?.name || "Unknown Product",
-                price: (product as SimProductLite | null)?.price || 0,
-                image: (product as SimProductLite | null)?.image_url?.[0] || "",
-                gst_percentage:
-                  (product as SimProductLite | null)?.gst_percentage || 0,
-                inventory: (product as SimProductLite | null)?.inventory || 0,
-              };
-            }
-
-            const { data: product } = await shopApi.products.getById(
-              item.product_id
-            );
-            return {
-              id: item.id,
-              product_id: item.product_id,
-              quantity: item.quantity,
-              name:
-                (product as ShopProductLite | null)?.name || "Unknown Product",
-              price: (product as ShopProductLite | null)?.price || 0,
-              image: (product as ShopProductLite | null)?.images?.[0] || "",
-              gst_percentage:
-                (product as ShopProductLite | null)?.gst_percentage || 0,
-              inventory: (product as ShopProductLite | null)?.inventory || 0,
-            };
-          })
-        );
-
-        setCartItems(cartItemsWithDetails);
-      }
+      const items = await fetchCartItemsFromApi();
+      setCartItems(items);
     } catch (error) {
       console.error("Error fetching cart items:", error);
       toast({
@@ -283,7 +261,7 @@ export const CartProvider = ({ children }: CartProviderProps) => {
     } finally {
       setIsLoading(false);
     }
-  }, [user, toast]);
+  }, [user, isAuthenticated, toast, fetchCartItemsFromApi]);
 
   const fetchAddresses = useCallback(async () => {
     if (!user) return;
@@ -578,61 +556,23 @@ export const CartProvider = ({ children }: CartProviderProps) => {
 
     if (isAuthenticated && user) {
       try {
-        let addedNewItem = false;
-        // Check if item is already in cart
-        const existingItem = cartItems.find(
-          (item) => item.product_id === product.id
-        );
+        const res = await fetch("/api/cart", {
+          method: "POST",
+          cache: "no-store",
+          credentials: "include",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ product_id: product.id, quantity }),
+        });
 
-        if (existingItem) {
-          // Check if adding this quantity would exceed inventory
-          const newQuantity = existingItem.quantity + quantity;
-          if (
-            product.inventory !== undefined &&
-            newQuantity > product.inventory
-          ) {
-            toast({
-              title: "Insufficient Stock",
-              description: `Only ${product.inventory} items available in stock. You already have ${existingItem.quantity} in your cart.`,
-              variant: "destructive",
-            });
-            return;
-          }
-          // Update quantity
-          await updateQuantity(existingItem.id, newQuantity);
-        } else {
-          // Add new item
-          const { data, error } = await shopApi.cartItems.insert({
-            user_id: user.id,
-            product_id: product.id,
-            quantity,
-          });
-
-          if (error) throw error;
-
-          if (data) {
-            // Add to local state with product details
-            const inserted = (Array.isArray(data) ? data[0] : data) as {
-              id: string;
-            };
-            const newItem: CartItem = {
-              id: inserted.id,
-              product_id: product.id,
-              quantity,
-              name: product.name,
-              price: product.price,
-              image: product.images?.[0] || "",
-              gst_percentage: product.gst_percentage,
-              inventory: product.inventory,
-            };
-
-            setCartItems((prev) => [...prev, newItem]);
-            addedNewItem = true;
-          }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || "Failed to add to cart");
         }
-        await fetchCartItems();
+
+        const body = await res.json();
+        setCartItems(normalizeCartItems(body?.data || []));
         toast({
-          description: addedNewItem ? "Product added to cart" : "Cart updated",
+          description: "Product added to cart",
         });
       } catch (error) {
         console.error("Error adding to cart:", error);
@@ -697,17 +637,21 @@ export const CartProvider = ({ children }: CartProviderProps) => {
 
     if (isAuthenticated && user) {
       try {
-        const { error } = await shopApi.cartItems.update(itemId, {
-          quantity,
+        const res = await fetch("/api/cart", {
+          method: "PATCH",
+          cache: "no-store",
+          credentials: "include",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ itemId, quantity }),
         });
 
-        if (error) throw error;
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || "Failed to update cart");
+        }
 
-        setCartItems((prev) =>
-          prev.map((item) =>
-            item.id === itemId ? { ...item, quantity } : item
-          )
-        );
+        const body = await res.json();
+        setCartItems(normalizeCartItems(body?.data || []));
 
         toast({
           description: "Cart updated",
@@ -738,11 +682,21 @@ export const CartProvider = ({ children }: CartProviderProps) => {
   const removeFromCart = async (itemId: string) => {
     if (isAuthenticated && user) {
       try {
-        const { error } = await shopApi.cartItems.delete(itemId);
+        const res = await fetch("/api/cart", {
+          method: "DELETE",
+          cache: "no-store",
+          credentials: "include",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ itemId }),
+        });
 
-        if (error) throw error;
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || "Failed to remove item");
+        }
 
-        setCartItems((prev) => prev.filter((item) => item.id !== itemId));
+        const body = await res.json();
+        setCartItems(normalizeCartItems(body?.data || []));
 
         toast({
           description: "Item removed from cart",
@@ -770,13 +724,18 @@ export const CartProvider = ({ children }: CartProviderProps) => {
   const clearCart = async () => {
     if (isAuthenticated && user) {
       try {
-        // Using a direct query since we need to delete all items for a user
-        const { error } = await supabase
-          .from("cart_items")
-          .delete()
-          .eq("user_id", user.id);
+        const res = await fetch("/api/cart", {
+          method: "DELETE",
+          cache: "no-store",
+          credentials: "include",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ clearAll: true }),
+        });
 
-        if (error) throw error;
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || "Failed to clear cart");
+        }
 
         setCartItems([]);
 
@@ -1108,49 +1067,27 @@ export const CartProvider = ({ children }: CartProviderProps) => {
                 const localCartItems: CartItem[] = JSON.parse(localCart);
                 
                 if (localCartItems.length > 0) {
-                  // Get current database cart items
-                  const { data: dbCartItems } = await shopApi.cartItems.getByUserId(user.id);
-                  
-                  // Merge local cart items with database cart
                   for (const localItem of localCartItems) {
-                    // Check if item already exists in database cart
-                    const existingDbItem = dbCartItems?.find(
-                      (item: any) => item.product_id === localItem.product_id
-                    );
-                    
-                    if (existingDbItem) {
-                      // Update quantity if needed (merge quantities)
-                      const newQuantity = Math.min(
-                        existingDbItem.quantity + localItem.quantity,
-                        localItem.inventory || Infinity
+                    try {
+                      await fetch("/api/cart", {
+                        method: "POST",
+                        cache: "no-store",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          product_id: localItem.product_id,
+                          quantity: localItem.quantity,
+                        }),
+                      });
+                    } catch (error) {
+                      console.error(
+                        `Failed to merge product ${localItem.product_id} to cart:`,
+                        error
                       );
-                      if (newQuantity !== existingDbItem.quantity) {
-                        await shopApi.cartItems.update(existingDbItem.id, {
-                          quantity: newQuantity,
-                        });
-                      }
-                    } else {
-                      // Add new item to database cart
-                      try {
-                        const { data: product } = await shopApi.products.getById(
-                          localItem.product_id
-                        );
-                        if (product) {
-                          await shopApi.cartItems.insert({
-                            user_id: user.id,
-                            product_id: localItem.product_id,
-                            quantity: localItem.quantity,
-                          });
-                        }
-                      } catch (error) {
-                        console.error(`Failed to add product ${localItem.product_id} to cart:`, error);
-                      }
                     }
                   }
-                  
                   // Clear localStorage cart after merging
                   localStorage.removeItem("cart");
-                  
                   // Refresh cart items from database
                   await fetchCartItems();
                 }
