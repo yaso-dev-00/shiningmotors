@@ -263,7 +263,7 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
               {/* Dropdown menu for message options (always visible trigger on hover/focus) */}
 
               {/* Media display or Post Preview */}
-              {message && message.message_type && (
+              {message && message.message_type && message.type!=="text" && (
                 <div className="mt-2 w-full">
                   {/* Image Preview */}
                   {message.message_type === "image" && message.content && (
@@ -629,8 +629,8 @@ const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
               {/* Fallback: Show text only for text messages */}
               {message.message_type === "text" && message.text && (
                 <div className="p-2 flex w-full relative">
-                  <div className="w-full">
-                    <p className="whitespace-pre-wrap">{message.text}</p>
+                  <div className="w-full min-w-0 flex-shrink">
+                    <p className="whitespace-normal break-words" style={{ wordWrap: 'break-word', overflowWrap: 'break-word', lineHeight: '1.5' }}>{message.text}</p>
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
