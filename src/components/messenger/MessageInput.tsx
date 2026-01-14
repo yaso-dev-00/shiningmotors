@@ -308,7 +308,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage }) => {
   }}
   onKeyDown={handleKeyPress}
   placeholder="Type a message..."
-  className="w-[90%] min-h-[30px] h-[30px] md:min-h-[45px] max-h-[160px] text-[16px] overflow-hidden resize-none bg-gradient-to-b from-white to-gray-100 text-gray-800 border-none outline-none px-3 scrollbar-hide transition-all  pt-2  border-l-0 focus-visible:outline-none rounded-none focus-visible:ring-0 focus-visible:ring-gray-200"
+  className="w-full min-h-[30px] h-[30px] md:min-h-[45px] max-h-[160px] text-[16px] overflow-hidden resize-none bg-gradient-to-b from-white to-gray-100 text-gray-800 border-none outline-none pl-3 pr-28 scrollbar-hide transition-all pt-2 pb-2 border-l-0 focus-visible:outline-none rounded-none focus-visible:ring-0 focus-visible:ring-gray-200"
   ref={textareaRef}
 />
           <input
@@ -319,11 +319,11 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage }) => {
             onChange={handleFileChange}
             accept="image/*,video/*,application/*"
           />
-          <div className="absolute right-2 top-2 flex space-x-2">
+          <div className="absolute right-2 bottom-2 flex items-center space-x-1">
             <button
               type="button"
               onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="text-gray-500 hover:text-blue-500 transition-colors"
+              className="text-gray-500 hover:text-blue-500 transition-colors p-1"
               aria-label="Add emoji"
             >
               <Smile className="h-5 w-5" />
@@ -331,16 +331,16 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage }) => {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="text-gray-500 hover:text-blue-500 transition-colors"
+              className="text-gray-500 hover:text-blue-500 transition-colors p-1"
               aria-label="Attach file"
             >
               <Paperclip className="h-5 w-5" />
             </button>
              <Button
           onClick={handleSend}
-          className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2 h-auto w-auto shadow-md"
+          className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-1.5 h-auto w-auto shadow-md min-w-[36px]"
         >
-          <Send className="h-5 w-5" />
+          <Send className="h-4 w-4" />
         </Button>
           </div>
         </div>

@@ -37,6 +37,14 @@ import {
 import { useRouter } from "next/navigation";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { format } from "date-fns";
+import {
+  getEncryptedCache,
+  setEncryptedCache,
+  deleteEncryptedCache,
+  clearConversationMessagesCache,
+  getConversationsCacheKey,
+  getMessagesCacheKey,
+} from "@/lib/encrypted-cache";
 
 // Define Media type as expected by MessageBubble
 interface Media {
@@ -112,7 +120,7 @@ interface MessengerUIProps {
 
 const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
   const isMobile = useIsMobile();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   useOnlineStatus(user?.id);
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
@@ -143,11 +151,40 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     return now.getTime() - seen.getTime() < 60 * 1000;
   }, []);
 
+  // Helper to get auth headers
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+    };
+    const accessToken = session?.access_token;
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+    return headers;
+  }, [session]);
+
   // SWR Fetchers
   const fetchConversationsData = useCallback(async (): Promise<Conversation[]> => {
     if (!user?.id) return [];
-    const { data, error } = await fetchConversations(user.id);
-    if (error) throw error;
+    
+    // Fetch from API route with cache busting
+    const response = await fetch(`/api/messenger/conversations?_t=${Date.now()}`, {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to fetch conversations");
+    }
+
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || "Failed to fetch conversations");
+    }
+
+    const data = result.data as ConversationRpcRow[];
 
     const localConversations: Conversation[] = (
       data as ConversationRpcRow[]
@@ -185,7 +222,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     );
 
     // Merge profile information into localConversations
-    return localConversations.map((conv) => {
+    const enrichedConversations = localConversations.map((conv) => {
       const profile = profiles.find((p) => p?.id === conv.user_id);
       return {
         ...conv,
@@ -201,17 +238,44 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
         username: profile?.username || conv.username || "Unknown User",
       };
     });
-  }, [user?.id, isUserOnline]);
+
+    // Store in encrypted cache synchronously before returning
+    const cacheKey = getConversationsCacheKey(user.id);
+    try {
+      await setEncryptedCache(cacheKey, enrichedConversations, user.id);
+    } catch (err) {
+      console.error('Failed to cache conversations:', err);
+    }
+
+    return enrichedConversations;
+  }, [user?.id, isUserOnline, getAuthHeaders]);
 
   const fetchMessagesData = useCallback(async () => {
     if (!activeConversation || !user?.id) return [];
-    const { data, error } = await fetchMessages({
-      user1: user.id,
-      user2: activeConversation,
-    });
-    if (error) throw error;
+    
+    // Fetch from API route with cache busting
+    const response = await fetch(
+      `/api/messenger/messages?user1=${user.id}&user2=${activeConversation}&_t=${Date.now()}`,
+      {
+        method: "GET",
+        headers: getAuthHeaders(),
+        cache: "no-store",
+      }
+    );
 
-    return (data as Database["public"]["Tables"]["messages"]["Row"][]).map((msg) => ({
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to fetch messages");
+    }
+
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || "Failed to fetch messages");
+    }
+
+    const data = result.data as Database["public"]["Tables"]["messages"]["Row"][];
+
+    const messages = (data as Database["public"]["Tables"]["messages"]["Row"][]).map((msg) => ({
       id: msg.id,
       sender_id: msg.sender_id,
       receiver_id: msg.receiver_id,
@@ -227,11 +291,54 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
       media: undefined,
       reactions: undefined,
     })) as Message[];
+
+    // Store in encrypted cache synchronously before returning
+    const cacheKey = getMessagesCacheKey(user.id, activeConversation);
+    try {
+      await setEncryptedCache(cacheKey, messages, user.id);
+    } catch (err) {
+      console.error('Failed to cache messages:', err);
+    }
+
+    return messages;
+  }, [activeConversation, user?.id, getAuthHeaders]);
+
+  // Load cached data for SWR fallback
+  const [cachedConversations, setCachedConversations] = useState<Conversation[] | null>(null);
+  const [cachedMessages, setCachedMessages] = useState<Message[] | null>(null);
+
+  // Load cached conversations on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    const loadCachedConversations = async () => {
+      const cacheKey = getConversationsCacheKey(user.id);
+      const cached = await getEncryptedCache<Conversation[]>(cacheKey, user.id);
+      if (cached) {
+        setCachedConversations(cached);
+      }
+    };
+    loadCachedConversations();
+  }, [user?.id]);
+
+  // Load cached messages when conversation changes
+  useEffect(() => {
+    if (!activeConversation || !user?.id) {
+      setCachedMessages(null);
+      return;
+    }
+    const loadCachedMessages = async () => {
+      const cacheKey = getMessagesCacheKey(user.id, activeConversation);
+      const cached = await getEncryptedCache<Message[]>(cacheKey, user.id);
+      if (cached) {
+        setCachedMessages(cached);
+      }
+    };
+    loadCachedMessages();
   }, [activeConversation, user?.id]);
 
-  // SWR Hooks
+  // SWR Hooks - Use cached data as fallback, but always fetch fresh
   const {
-    data: conversations = [],
+    data: conversations,
     isLoading: loadingConversations,
     mutate: mutateConversations,
   } = useSWR<Conversation[]>(
@@ -239,13 +346,16 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     fetchConversationsData,
     {
       revalidateOnFocus: false,
-      revalidateIfStale: false,
-      dedupingInterval: 2000,
+      revalidateIfStale: true, // Revalidate stale cache in background
+      revalidateOnMount: true, // Always fetch fresh data on mount
+      dedupingInterval: 1000, // Reduce deduping to allow faster updates
+      fallbackData: cachedConversations || undefined, // Show cached data immediately
+      keepPreviousData: false, // Don't keep old data when fetching new
     }
   );
 
   const {
-    data: messages = [],
+    data: messages,
     isLoading: loadingMessages,
     mutate: mutateMessages,
   } = useSWR<Message[]>(
@@ -253,10 +363,30 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     fetchMessagesData,
     {
       revalidateOnFocus: false,
-      revalidateIfStale: false,
-      dedupingInterval: 2000,
+      revalidateIfStale: true, // Revalidate stale cache in background
+      revalidateOnMount: true, // Always fetch fresh data on mount
+      dedupingInterval: 1000, // Reduce deduping to allow faster updates
+      fallbackData: cachedMessages || undefined, // Show cached data immediately
+      keepPreviousData: false, // Don't keep old data when fetching new
     }
   );
+
+  // Update cached state when fresh data arrives from SWR
+  useEffect(() => {
+    if (conversations && conversations.length > 0 && user?.id) {
+      setCachedConversations(conversations);
+    }
+  }, [conversations, user?.id]);
+
+  useEffect(() => {
+    if (messages && messages.length >= 0 && user?.id && activeConversation) {
+      setCachedMessages(messages);
+    }
+  }, [messages, user?.id, activeConversation]);
+
+  // Use SWR data or fallback to cached data
+  const displayConversations = conversations ?? cachedConversations ?? [];
+  const displayMessages = messages ?? cachedMessages ?? [];
 
   // Ensure the URL param is always honored (e.g., on hard refresh)
   useEffect(() => {
@@ -335,7 +465,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
 
   // Scroll to bottom when messages change and loading is complete
   useEffect(() => {
-    if (!loadingMessages && messages.length > 0) {
+    if (!loadingMessages && displayMessages.length > 0) {
       // Use multiple attempts with increasing delays to ensure scroll works
       // This handles cases where DOM might not be fully updated yet
       const scrollAttempts = [100, 300, 500];
@@ -345,14 +475,14 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
         }, delay);
       });
     }
-  }, [messages, loadingMessages, scrollToBottom]);
+  }, [displayMessages, loadingMessages, scrollToBottom]);
 
   // Handle initialUserId selection when conversations are loaded
   useEffect(() => {
-    if (initialUserId && !activeConversation && conversations.length > 0) {
+    if (initialUserId && !activeConversation && displayConversations.length > 0) {
       handleSelectConversation(initialUserId);
     }
-  }, [initialUserId, activeConversation, conversations.length]);
+  }, [initialUserId, activeConversation, displayConversations.length]);
 
   // --- Setup Real-time Subscription ---
   useEffect(() => {
@@ -368,9 +498,17 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
         
         if (typedMsg.isDeleted) {
           // Update messages cache by removing deleted message
-          mutateMessages((currentMessages) => {
+          mutateMessages(async (currentMessages) => {
             if (!currentMessages) return currentMessages;
-            return currentMessages.filter((message) => message.id !== typedMsg.id);
+            const updated = currentMessages.filter((message) => message.id !== typedMsg.id);
+            // Update encrypted cache
+            if (user?.id && activeConversation) {
+              const cacheKey = getMessagesCacheKey(user.id, activeConversation);
+              setEncryptedCache(cacheKey, updated, user.id).catch((err) => {
+                console.error('Failed to update messages cache:', err);
+              });
+            }
+            return updated;
           }, false);
         } else if (
           (typedMsg.sender_id === user?.id &&
@@ -395,22 +533,30 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
           };
 
           // Update messages cache by adding new message
-          mutateMessages((currentMessages) => {
+          mutateMessages(async (currentMessages) => {
             if (!currentMessages) return [newMessage];
             // Check if message already exists to avoid duplicates
             if (currentMessages.some(m => m.id === newMessage.id)) {
               return currentMessages;
             }
-            return [...currentMessages, newMessage];
+            const updated = [...currentMessages, newMessage];
+            // Update encrypted cache
+            if (user?.id && activeConversation) {
+              const cacheKey = getMessagesCacheKey(user.id, activeConversation);
+              setEncryptedCache(cacheKey, updated, user.id).catch((err) => {
+                console.error('Failed to update messages cache:', err);
+              });
+            }
+            return updated;
           }, false);
 
           // Update conversations cache
           const conversationToUpdateId =
             typedMsg.sender_id === user.id ? typedMsg.receiver_id : typedMsg.sender_id;
 
-          mutateConversations((currentConversations) => {
+          mutateConversations(async (currentConversations) => {
             if (!currentConversations) return currentConversations;
-            return currentConversations.map((conv) =>
+            const updated = currentConversations.map((conv) =>
               conv.user_id === conversationToUpdateId
                 ? {
                     ...conv,
@@ -424,6 +570,14 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
                   }
                 : conv
             );
+            // Update encrypted cache
+            if (user?.id) {
+              const cacheKey = getConversationsCacheKey(user.id);
+              setEncryptedCache(cacheKey, updated, user.id).catch((err) => {
+                console.error('Failed to update conversations cache:', err);
+              });
+            }
+            return updated;
           }, false);
         }
       },
@@ -441,14 +595,56 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     // 1. Send text message if available
     if (content.trim()) {
       try {
-        const { error } = await sendMessage({
-          sender_id: user.id,
-          receiver_id: activeConversation,
-          content: content.trim(),
-          message_type: "text",
+        const response = await fetch("/api/messenger/messages", {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            sender_id: user.id,
+            receiver_id: activeConversation,
+            content: content.trim(),
+            message_type: "text",
+          }),
         });
 
-        if (error) console.error("Error sending text message:", error);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Error sending text message:", errorData.error);
+        } else {
+          // Update cache after successful send
+          const result = await response.json();
+          if (result.success && result.data && user.id && activeConversation) {
+            const newMessage: Message = {
+              id: result.data.id,
+              sender_id: result.data.sender_id,
+              receiver_id: result.data.receiver_id,
+              content: result.data.content,
+              message_type: result.data.message_type,
+              created_at: result.data.created_at || new Date().toISOString(),
+              text: result.data.content || undefined,
+              sender: "user",
+              timestamp: new Date(result.data.created_at || Date.now()),
+              read: false,
+              sent: true,
+              delivered: true,
+              media: undefined,
+              reactions: undefined,
+            };
+            
+            // Optimistically update cache
+            mutateMessages(async (currentMessages) => {
+              if (!currentMessages) return [newMessage];
+              if (currentMessages.some(m => m.id === newMessage.id)) {
+                return currentMessages;
+              }
+              const updated = [...currentMessages, newMessage];
+              const cacheKey = getMessagesCacheKey(user.id, activeConversation);
+              setEncryptedCache(cacheKey, updated, user.id).catch((err) => {
+                console.error('Failed to update messages cache:', err);
+              });
+              return updated;
+            }, false);
+          }
+        }
       } catch (error) {
         console.error("Text message error:", error);
       }
@@ -462,18 +658,58 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
       const message_type: "video" | "image" | "text" | "post" = isImage ? "image" : isVideo ? "video" : "image";
 
       try {
-        // Upload to Supabase storage
+        // Upload to Supabase storage (keep using direct client for storage)
         const publicUrl = await uploadFile(file, user.id, "message-media");
 
-        const { error } = await sendMessage({
-          sender_id: user.id,
-          receiver_id: activeConversation,
-          content: publicUrl,
-          message_type,
+        const response = await fetch("/api/messenger/messages", {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            sender_id: user.id,
+            receiver_id: activeConversation,
+            content: publicUrl,
+            message_type,
+          }),
         });
 
-        if (error) {
-          console.error(`Error sending ${message_type} message:`, error);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`Error sending ${message_type} message:`, errorData.error);
+        } else {
+          // Update cache after successful send
+          const result = await response.json();
+          if (result.success && result.data && user.id && activeConversation) {
+            const newMessage: Message = {
+              id: result.data.id,
+              sender_id: result.data.sender_id,
+              receiver_id: result.data.receiver_id,
+              content: result.data.content,
+              message_type: result.data.message_type,
+              created_at: result.data.created_at || new Date().toISOString(),
+              text: result.data.content || undefined,
+              sender: "user",
+              timestamp: new Date(result.data.created_at || Date.now()),
+              read: false,
+              sent: true,
+              delivered: true,
+              media: undefined,
+              reactions: undefined,
+            };
+            
+            // Optimistically update cache
+            mutateMessages(async (currentMessages) => {
+              if (!currentMessages) return [newMessage];
+              if (currentMessages.some(m => m.id === newMessage.id)) {
+                return currentMessages;
+              }
+              const updated = [...currentMessages, newMessage];
+              const cacheKey = getMessagesCacheKey(user.id, activeConversation);
+              setEncryptedCache(cacheKey, updated, user.id).catch((err) => {
+                console.error('Failed to update messages cache:', err);
+              });
+              return updated;
+            }, false);
+          }
         }
       } catch (err) {
         console.error(`Upload error for ${message_type}:`, err);
@@ -481,7 +717,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     }
 
     // After sending, check if the conversation exists
-    const exists = conversations.some(
+    const exists = displayConversations.some(
       (conv) => conv.user_id === activeConversation
     );
     if (!exists) {
@@ -531,17 +767,33 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
   const handleDeleteConversation = async (conversationId: string) => {
     if (!user) return;
     try {
-      const { error } = await deleteConversationBetweenUsers(
-        user.id,
-        conversationId
-      );
-      if (error) throw error;
+      const response = await fetch("/api/messenger/conversations", {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ conversationId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to delete conversation");
+      }
+
       toast.success("Conversation history deleted.");
       setActiveConversation(null);
       // Clear messages cache
       mutateMessages([], false);
+      // Clear encrypted cache for this conversation
+      if (user.id) {
+        await clearConversationMessagesCache(user.id, conversationId);
+      }
       // Revalidate conversations to get updated list
       await mutateConversations();
+      // Update encrypted conversations cache after revalidation
+      if (user.id) {
+        const cacheKey = getConversationsCacheKey(user.id);
+        const updatedConversations = await fetchConversationsData();
+        await setEncryptedCache(cacheKey, updatedConversations, user.id);
+      }
     } catch (error) {
       console.error("Error deleting conversation history:", error);
       toast.error("Failed to delete conversation history.");
@@ -577,16 +829,24 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
 
   const handleUnsendMessage = (messageId: string) => {
     // Remove the message from the messages array
-    mutateMessages((currentMessages) => {
+    mutateMessages(async (currentMessages) => {
       if (!currentMessages) return currentMessages;
       const filtered = currentMessages.filter((msg) => msg.id !== messageId);
+      
+      // Update encrypted cache
+      if (user?.id && activeConversation) {
+        const cacheKey = getMessagesCacheKey(user.id, activeConversation);
+        setEncryptedCache(cacheKey, filtered, user.id).catch((err) => {
+          console.error('Failed to update messages cache:', err);
+        });
+      }
       
       // Update the conversation's last message if needed
       if (activeConversation && filtered.length > 0) {
         const lastMsg = filtered[filtered.length - 1];
-        mutateConversations((currentConversations) => {
+        mutateConversations(async (currentConversations) => {
           if (!currentConversations) return currentConversations;
-          return currentConversations.map((conv) =>
+          const updated = currentConversations.map((conv) =>
             conv.user_id === activeConversation
               ? {
                   ...conv,
@@ -596,6 +856,14 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
                 }
               : conv
           );
+          // Update encrypted cache
+          if (user?.id) {
+            const cacheKey = getConversationsCacheKey(user.id);
+            setEncryptedCache(cacheKey, updated, user.id).catch((err) => {
+              console.error('Failed to update conversations cache:', err);
+            });
+          }
+          return updated;
         }, false);
       }
       
@@ -612,7 +880,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     }
 
     // Persist selected user's name for header/avatar fallback on refresh
-    const selectedConv = conversations.find((conv) => conv.user_id === id);
+    const selectedConv = displayConversations.find((conv) => conv.user_id === id);
     const displayName =
       selectedConv?.full_name ||
       selectedConv?.username ||
@@ -649,7 +917,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
     }
   };
 
-  const selectedConversationProfile = conversations.find(
+  const selectedConversationProfile = displayConversations.find(
     (c) => c.user_id === activeConversation
   );
 
@@ -716,7 +984,7 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
           }
         >
           <Conversations
-            conversations={conversations}
+            conversations={displayConversations}
             onSelectConversation={handleSelectConversation}
             activeConversation={activeConversation}
             loading={loadingConversations}
@@ -875,12 +1143,12 @@ const MessengerUI: React.FC<MessengerUIProps> = ({ initialUserId }) => {
                   <div className="text-center text-gray-500">
                     Loading messages...
                   </div>
-                ) : messages.length === 0 ? (
+                ) : displayMessages.length === 0 ? (
                   <div className="text-center text-gray-500">
                     No messages yet. Start the conversation!
                   </div>
                 ) : (
-                  messages.map((message) => {
+                  displayMessages.map((message) => {
                     const messageDate = new Date(message.timestamp);
                     const showDateHeader =
                       lastMessageDateRef.current === null || // Show header for the first message
