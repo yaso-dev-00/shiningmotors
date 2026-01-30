@@ -1,8 +1,14 @@
+
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import Wishlist from "@/views/Wishlist";
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-import Wishlist from "@/views/Wishlist";
 export default function Page() { 
-  return <Wishlist />; 
+  return (
+    <ProtectedRoute>
+      <Wishlist />
+    </ProtectedRoute>
+  );
 }
 
 

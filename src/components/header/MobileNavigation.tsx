@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/sheet";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 interface NavLinkProps {
   to: string;
   children: React.ReactNode;
@@ -32,6 +33,7 @@ const NavLink = ({ to, children, onClick, className = "" }: NavLinkProps) => {
 export const MobileNavigation = ({isSidebarOpen,setIsSidebarOpen}:{isSidebarOpen:boolean,setIsSidebarOpen:any}) => {
   // const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { isAuthenticated, signOut } = useAuth();
+  const router = useRouter();
 
   return (
     <>
@@ -77,9 +79,12 @@ export const MobileNavigation = ({isSidebarOpen,setIsSidebarOpen}:{isSidebarOpen
                 <NavLink to="/shop/orders" onClick={() => setIsSidebarOpen(false)}>Your Orders</NavLink>
                 <button
                   className="flex w-full items-center py-2 px-3 rounded-md text-sm font-medium transition-colors hover:bg-gray-100 text-sm-red"
-                  onClick={() => {
-                    signOut();
+                  onClick={async () => {
                     setIsSidebarOpen(false);
+                    await signOut();
+                    // Redirect to home page after logout
+                    router.push('/');
+                    router.refresh();
                   }}
                 >
                   Sign Out

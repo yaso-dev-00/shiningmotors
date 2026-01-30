@@ -107,7 +107,12 @@ export const UserDropdown = ({ open, onOpenChange }: UserDropdownProps) => {
         </DropdownMenuSub>
         
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => signOut()}>
+        <DropdownMenuItem onClick={async () => {
+          await signOut();
+          // Redirect to home page after logout
+          router.push('/');
+          router.refresh();
+        }}>
           <LogOut className="mr-2 h-4 w-4" /> Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
