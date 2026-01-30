@@ -40,16 +40,54 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     // Get initial session
     const getSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        await fetchUserProfile(session.user.id);
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+        
+        // If there's an error or no session, ensure we're logged out
+        if (error || !session) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setUserRole(null);
+          setLoading(false);
+          return;
+        }
+        
+        // Verify the session is still valid by checking the user
+        if (session?.user) {
+          // Verify the session hasn't expired
+          const now = Math.floor(Date.now() / 1000);
+          if (session.expires_at && session.expires_at < now) {
+            // Session expired, clear it
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            setUserRole(null);
+            setLoading(false);
+            return;
+          }
+          
+          setSession(session);
+          setUser(session.user);
+          await fetchUserProfile(session.user.id);
+        } else {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setUserRole(null);
+        }
+      } catch (error) {
+        console.error("Error getting session:", error);
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        setUserRole(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     getSession();
@@ -58,15 +96,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+      // Handle SIGNED_OUT event explicitly
+      if (event === 'SIGNED_OUT' || !session) {
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        setUserRole(null);
+        setLoading(false);
+        
+        // Clear any remaining storage
+        if (typeof window !== 'undefined') {
+          const supabaseKeys = Object.keys(localStorage).filter(key => 
+            key.startsWith('sb-') || key.startsWith('supabase.')
+          );
+          supabaseKeys.forEach(key => localStorage.removeItem(key));
+        }
+        return;
+      }
 
+      // Verify session is valid
       if (session?.user) {
+        const now = Math.floor(Date.now() / 1000);
+        if (session.expires_at && session.expires_at < now) {
+          // Session expired
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setUserRole(null);
+          setLoading(false);
+          return;
+        }
+        
+        setSession(session);
+        setUser(session.user);
         // Use setTimeout to avoid recursive calls
         setTimeout(() => {
           fetchUserProfile(session.user.id);
         }, 0);
       } else {
+        setSession(null);
+        setUser(null);
         setProfile(null);
         setUserRole(null);
       }
@@ -210,14 +279,52 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     try {
-      await supabase.auth.signOut();
+      // Clear local state first
       setUser(null);
       setProfile(null);
       setUserRole(null);
       setSession(null);
+      
+      // Sign out from Supabase (this clears cookies and session)
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error("Error signing out:", error);
+        // Even if there's an error, clear local storage
+      }
+      
+      // Clear any remaining session data from localStorage and sessionStorage
+      if (typeof window !== 'undefined') {
+        // Clear Supabase session storage
+        const supabaseKeys = Object.keys(localStorage).filter(key => 
+          key.startsWith('sb-') || key.startsWith('supabase.')
+        );
+        supabaseKeys.forEach(key => localStorage.removeItem(key));
+        
+        // Clear sessionStorage
+        sessionStorage.clear();
+        
+        // Clear any auth-related cookies manually (as a fallback)
+        document.cookie.split(";").forEach((c) => {
+          const cookieName = c.trim().split("=")[0];
+          if (cookieName.includes('supabase') || cookieName.includes('sb-') || cookieName.includes('access_token')) {
+            document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+            document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+          }
+        });
+      }
+      
+      // Force a session refresh to ensure state is cleared
+      await supabase.auth.getSession();
+      
       return true;
     } catch (error) {
       console.error("Error signing out:", error);
+      // Even on error, clear local state
+      setUser(null);
+      setProfile(null);
+      setUserRole(null);
+      setSession(null);
       return false;
     }
   };

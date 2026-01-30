@@ -213,20 +213,21 @@ export const CartProvider = ({ children }: CartProviderProps) => {
   }, [session]);
 
   const fetchCartItemsFromApi = useCallback(async () => {
+    // Don't fetch if user is not authenticated
+    if (!user || !isAuthenticated || !session?.access_token) {
+      return [];
+    }
+
     // Get access token from session
-    const accessToken = session?.access_token;
+    const accessToken = session.access_token;
     
     // Add timestamp to bypass any browser or network caching
     const headers: HeadersInit = {
       "Cache-Control": "no-cache, no-store, must-revalidate",
       "Pragma": "no-cache",
       "Expires": "0",
+      "Authorization": `Bearer ${accessToken}`,
     };
-    
-    // Add Authorization header if we have a token
-    if (accessToken) {
-      headers["Authorization"] = `Bearer ${accessToken}`;
-    }
     
     const res = await fetch(`/api/cart?_t=${Date.now()}`, {
       method: "GET",
@@ -237,15 +238,23 @@ export const CartProvider = ({ children }: CartProviderProps) => {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      // If unauthorized, return empty array instead of throwing
+      if (res.status === 401) {
+        return [];
+      }
       throw new Error(body?.error || "Failed to fetch cart");
     }
 
     const body = await res.json();
     return normalizeCartItems(body?.data || []);
-  }, [normalizeCartItems, session]);
+  }, [normalizeCartItems, session, user, isAuthenticated]);
 
   const fetchCartItems = useCallback(async () => {
-    if (!user || !isAuthenticated) return;
+    if (!user || !isAuthenticated) {
+      // Clear cart items when user is not authenticated
+      setCartItems([]);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -253,11 +262,16 @@ export const CartProvider = ({ children }: CartProviderProps) => {
       setCartItems(items);
     } catch (error) {
       console.error("Error fetching cart items:", error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch cart items",
-        variant: "destructive",
-      });
+      // Don't show error toast for unauthorized errors (user might have logged out)
+      if (error instanceof Error && error.message !== "Unauthorized") {
+        toast({
+          title: "Error",
+          description: "Failed to fetch cart items",
+          variant: "destructive",
+        });
+      }
+      // Clear cart items on error
+      setCartItems([]);
     } finally {
       setIsLoading(false);
     }
@@ -1112,6 +1126,12 @@ export const CartProvider = ({ children }: CartProviderProps) => {
       // Reset merge flag when user logs out
       hasMergedCartRef.current = false;
       lastFetchedUserIdRef.current = null;
+      
+      // Clear cart items, addresses, and orders when user logs out
+      setCartItems([]);
+      setAddresses([]);
+      setOrders([]);
+      setIsLoading(false);
       
       if (didInitGuestRef.current) return;
       didInitGuestRef.current = true;

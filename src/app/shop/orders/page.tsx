@@ -1,7 +1,13 @@
+
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import OrderHistory from "@/views/OrderHistory";
 
 export default function Page() {
-  return <OrderHistory />;
+  return (
+    <ProtectedRoute>
+      <OrderHistory />
+    </ProtectedRoute>
+  );
 }
 
 
