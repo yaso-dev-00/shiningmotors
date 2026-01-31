@@ -35,6 +35,9 @@ export const DesktopNavigation = () => {
       <NextLink href="/sim-racing" className={`nav-link ${isSimRacingActive ? 'text-sm-red' : ''} hover:text-sm-red`}>
         SR
       </NextLink>
+      <NextLink href="/vendors/map" className={`nav-link ${isActive === '/vendors/map' ? 'text-sm-red' : ''} hover:text-sm-red`}>
+        Find Vendors
+      </NextLink>
       <NextLink href="/about" className={`nav-link ${isActive === '/about' ? 'text-sm-red' : ''} hover:text-sm-red`}>
         About
       </NextLink>
