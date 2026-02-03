@@ -297,3 +297,4 @@ Potential improvements:
 
 Your vendor map feature is ready to use! Navigate to `/vendors/map` to see it in action.
 
+

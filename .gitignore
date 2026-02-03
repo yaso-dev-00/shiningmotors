@@ -3,3 +3,9 @@ package-lock.json
 .next
 .vercel
 .env*.local
+
+# README files
+README.md
+README*.md
+**/README.md
+**/README*.md

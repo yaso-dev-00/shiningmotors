@@ -41,10 +41,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Get initial session
     const getSession = async () => {
       try {
-        const {
-          data: { session },
+      const {
+        data: { session },
           error,
-        } = await supabase.auth.getSession();
+      } = await supabase.auth.getSession();
         
         // If there's an error or no session, ensure we're logged out
         if (error || !session) {
@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         
         // Verify the session is still valid by checking the user
-        if (session?.user) {
+      if (session?.user) {
           // Verify the session hasn't expired
           const now = Math.floor(Date.now() / 1000);
           if (session.expires_at && session.expires_at < now) {
@@ -72,7 +72,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           
           setSession(session);
           setUser(session.user);
-          await fetchUserProfile(session.user.id);
+        await fetchUserProfile(session.user.id);
         } else {
           setSession(null);
           setUser(null);
@@ -86,7 +86,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setProfile(null);
         setUserRole(null);
       } finally {
-        setLoading(false);
+      setLoading(false);
       }
     };
 

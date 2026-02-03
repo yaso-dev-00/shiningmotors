@@ -575,3 +575,4 @@ export const VendorMapView = ({ onVendorSelect }: VendorMapViewProps) => {
   );
 };
 
+

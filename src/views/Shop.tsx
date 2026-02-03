@@ -19,6 +19,7 @@ import HorizontalScrollCategories from "@/components/shop/HorizontalScroll";
 import HorizontalScrollForShops from "@/components/homepage/HorizontalScroll";
 import { motion } from "framer-motion";
 import { CarouselItem } from "@/components/ui/carousel";
+import { useAITracking } from "@/hooks/useAITracking";
 
 const PAGE_SIZE = 15;
 const randomImages = [
@@ -73,6 +74,7 @@ const Shop = ({ initialProducts = [], initialTotalCount = 0 }: ShopProps) => {
   const router = useRouter();
   const [isInitial,setIsInitial]=useState(true)
    const debouncedSearchTerm = useDebounce(searchTerm, 500);
+  const { trackInteraction } = useAITracking();
      useEffect(()=>{
         window.scrollTo(0,0)
      },[])
@@ -129,6 +131,15 @@ const Shop = ({ initialProducts = [], initialTotalCount = 0 }: ShopProps) => {
       if (error) throw error;
       setProducts(data || []);
       setTotalCount(count || 0);
+      
+      // Track search if search term exists
+      if (debouncedSearchTerm) {
+        trackInteraction("search", "product", undefined, {
+          query: debouncedSearchTerm,
+          resultsCount: count || 0,
+          category: selectedCategory || undefined,
+        });
+      }
     } catch (error) {
       console.error('Error fetching products:', error);
       toast({

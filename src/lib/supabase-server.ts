@@ -4,8 +4,25 @@ import { cookies } from 'next/headers';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rzrroghnzintpxspwauf.supabase.co";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6cnJvZ2huemludHB4c3B3YXVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ5MDEzNjcsImV4cCI6MjA2MDQ3NzM2N30.8in2_4tU-O_uz3fgvthaSpmmteNggXMfQ4qJ-JMagoA";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+/**
+ * Create server client for database operations
+ * Uses service role key if available (bypasses RLS), otherwise uses anon key
+ */
 export function createServerClient() {
+  // Use service role key for server-side writes (bypasses RLS)
+  // This is safe because it's only used server-side, never exposed to client
+  if (SUPABASE_SERVICE_ROLE_KEY) {
+    return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
+  
+  // Fallback to anon key (will respect RLS policies)
   return createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 

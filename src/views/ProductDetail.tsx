@@ -12,6 +12,8 @@ import Footer from "@/components/Footer";
 import { useToast } from "@/hooks/use-toast";
 import { shopApi } from "@/integrations/supabase/modules/shop";
 import { useCart } from "@/contexts/CartContext";
+import { useAITracking } from "@/hooks/useAITracking";
+
 const ProductDetail = () => {
   const params = useParams();
   const id = (params?.id as string) ?? "";
@@ -22,6 +24,8 @@ const ProductDetail = () => {
   const { toast } = useToast();
   const router = useRouter()
   const { addToCart } = useCart();
+  const { trackInteraction } = useAITracking();
+
   useEffect(() => {
     fetchProduct();
     // eslint-disable-next-line
@@ -40,6 +44,13 @@ console.log(product)
 
       setProduct(product);
       setSelectedImage(product.images && product.images.length > 0 ? product.images[0] : null);
+      
+      // Track product view
+      trackInteraction("view", "product", id, {
+        productName: product.name,
+        category: product.category,
+        price: product.price,
+      });
     } catch (error) {
       console.error('Error fetching product:', error);
       toast({
@@ -73,6 +84,13 @@ console.log(product)
       price:product.price,
       images:product.images,
     }, 1);
+    
+    // Track add to cart
+    trackInteraction("add_to_cart", "product", id, {
+      productName: product.name,
+      price: product.price,
+      quantity: 1,
+    });
   };
 
   return (

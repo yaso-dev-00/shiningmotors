@@ -3,6 +3,8 @@
 import BottomNav from "@/components/BottomNav";
 import FloatingQuickSettings from "@/components/FloatingButton";
 import { RouteRemember } from "@/components/RouteRemember";
+import { AIChatAssistant } from "@/components/AIChatAssistant";
+import { AIProvider } from "@/contexts/AIContext";
 import { FiMessageSquare } from "react-icons/fi";
 import { usePathname } from "next/navigation";
 
@@ -15,10 +17,11 @@ export default function MainLayout({
   const isMessengerScreen = pathname?.startsWith("/messenger");
 
   return (
-    <>
+    <AIProvider>
       <RouteRemember />
       {children}
       <BottomNav />
+      <AIChatAssistant />
       <div className="lg:hidden">
         <FloatingQuickSettings />
         {!isMessengerScreen && (
@@ -33,7 +36,7 @@ export default function MainLayout({
           </div>
         )}
       </div>
-    </>
+    </AIProvider>
   );
 }
 

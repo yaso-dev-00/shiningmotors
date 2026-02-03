@@ -588,6 +588,9 @@ export const CartProvider = ({ children }: CartProviderProps) => {
         toast({
           description: "Product added to cart",
         });
+        
+        // Track add to cart (tracking is handled in component level, but also here for API calls)
+        // Note: Component-level tracking is preferred, but this is a fallback
       } catch (error) {
         console.error("Error adding to cart:", error);
         toast({

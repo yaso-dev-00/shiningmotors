@@ -25,6 +25,23 @@ import PostSkeleton from "@/lib/PostSkeleton";
 import PostSkeletonForHomePage from "@/lib/postSkelitonForHomePage";
 import BottomNav from "@/components/BottomNav";
 import Image from "next/image";
+import FeaturedServicesSection from "@/components/homepage/FeaturedServicesSection";
+import RecentlyViewedSection from "@/components/homepage/RecentlyViewedSection";
+import RecentSearchesSection from "@/components/homepage/RecentSearchesSection";
+import RecommendedSection from "@/components/homepage/RecommendedSection";
+import SavedItemsSection from "@/components/homepage/SavedItemsSection";
+import ActivitySummaryCard from "@/components/homepage/ActivitySummaryCard";
+import PersonalizedDealsSection from "@/components/homepage/PersonalizedDealsSection";
+import FollowingActivitySection from "@/components/homepage/FollowingActivitySection";
+import UpcomingEventsSection from "@/components/homepage/UpcomingEventsSection";
+import VendorSpotlightSection from "@/components/homepage/VendorSpotlightSection";
+import LiveActivityFeedSection from "@/components/homepage/LiveActivityFeedSection";
+import SocialProofSection from "@/components/homepage/SocialProofSection";
+import MemberBenefitsBanner from "@/components/homepage/MemberBenefitsBanner";
+import ValuePropositionCards from "@/components/homepage/ValuePropositionCards";
+import FeatureComparisonTable from "@/components/homepage/FeatureComparisonTable";
+import LimitedOfferBanner from "@/components/homepage/LimitedOfferBanner";
+import SuccessStoriesSection from "@/components/homepage/SuccessStoriesSection";
 
 // Hero slideshow data
 const heroSlides = [
@@ -469,6 +486,31 @@ const Index = ({ initialData }: IndexProps) => {
             </HorizontalScrollHomePage>
           </div>
         </section>
+
+        {/* Featured Services - Real-time */}
+        <FeaturedServicesSection />
+
+        {/* Authenticated User Sections */}
+        <RecentlyViewedSection />
+        <RecentSearchesSection />
+        <RecommendedSection />
+        <SavedItemsSection />
+        <ActivitySummaryCard />
+        <PersonalizedDealsSection />
+        <FollowingActivitySection />
+
+        {/* All Users Sections */}
+        <UpcomingEventsSection />
+        <VendorSpotlightSection />
+        <LiveActivityFeedSection />
+        <SocialProofSection />
+
+        {/* Unauthenticated User Sections */}
+        <MemberBenefitsBanner />
+        <ValuePropositionCards />
+        <FeatureComparisonTable />
+        <LimitedOfferBanner />
+        <SuccessStoriesSection />
 
         {/* CTA Section */}
         <section className="relative py-16 md:py-24 text-white">

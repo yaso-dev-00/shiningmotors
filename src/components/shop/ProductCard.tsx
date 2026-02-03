@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useCart } from "@/contexts/CartContext";
 import { WishlistButton } from "../ui/WishlistButton";
+import { useAITracking } from "@/hooks/useAITracking";
 import Image from "next/image";
 
 interface ProductCardProps {
@@ -29,6 +30,7 @@ const ProductCard = ({
   isSale = false,
 }: ProductCardProps) => {
   const { addToCart } = useCart();
+  const { trackInteraction } = useAITracking();
   
   const handleAddToCart = async () => {
     // Fix: Pass a proper product object with all required properties
@@ -38,6 +40,22 @@ const ProductCard = ({
       price,
       images: [image],
     }, 1);
+    
+    // Track add to cart
+    trackInteraction("add_to_cart", "product", id, {
+      productName: name,
+      price,
+      quantity: 1,
+    });
+  };
+
+  const handleProductClick = () => {
+    // Track product card click
+    trackInteraction("click", "product", id, {
+      productName: name,
+      category,
+      price,
+    });
   };
 
   const formatPrice = (amount: number) => {
@@ -52,7 +70,7 @@ const ProductCard = ({
   return (
     <div className="product-card group animate-zoom-in h-full">
       <div className="relative overflow-hidden h-60">
-        <NextLink href={`/shop/product/${id}`}>
+        <NextLink href={`/shop/product/${id}`} onClick={handleProductClick}>
           <Image
             src={image || '/placeholder.svg'}
             alt={name}
@@ -101,10 +119,11 @@ const ProductCard = ({
         <NextLink
           href={`/shop/product/${id}`}
           className="block text-sm text-gray-500 hover:text-sm-red"
+          onClick={handleProductClick}
         >
           {category}
         </NextLink>
-        <NextLink href={`/shop/product/${id}`} className="block">
+        <NextLink href={`/shop/product/${id}`} className="block" onClick={handleProductClick}>
           <h3 className="mb-2 mt-1 text-lg font-medium transition-colors hover:text-sm-red">
             {name}
           </h3>
