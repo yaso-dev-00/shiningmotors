@@ -3,7 +3,7 @@ package-lock.json
 .next
 .vercel
 .env*.local
-
+.env.local
 # README files
 README.md
 README*.md
