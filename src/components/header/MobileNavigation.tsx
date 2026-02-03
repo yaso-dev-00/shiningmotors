@@ -66,7 +66,8 @@ export const MobileNavigation = ({isSidebarOpen,setIsSidebarOpen}:{isSidebarOpen
             {/* <NavLink to="/services" onClick={() => setIsSidebarOpen(false)}>Services</NavLink>
             <NavLink to="/events" onClick={() => setIsSidebarOpen(false)}>Events</NavLink>
             <NavLink to="/sim-racing" onClick={() => setIsSidebarOpen(false)}>Sim Racing</NavLink> */}
-              <NavLink to="/about" onClick={() => setIsSidebarOpen(false)}>About</NavLink>
+              <NavLink to="/vendors/map" onClick={() => setIsSidebarOpen(false)}>Find Vendors</NavLink>
+            <NavLink to="/about" onClick={() => setIsSidebarOpen(false)}>About</NavLink>
               <NavLink to="/shop/cart" onClick={() => setIsSidebarOpen(false)}>Cart</NavLink>
               
           </div>
