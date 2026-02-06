@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rzrroghnzintpxspwauf.supabase.co";
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Lazy initialization to avoid build-time errors
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rzrroghnzintpxspwauf.supabase.co";
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!supabaseUrl) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_URL is required");
+  if (!supabaseUrl) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL is required");
+  }
+
+  if (!supabaseServiceKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
+  }
+
+  return createClient(supabaseUrl, supabaseServiceKey);
 }
-
-if (!supabaseServiceKey) {
-  throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
-}
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // This endpoint can be called by a cron job or scheduled task
 // to send reminder notifications (event reminders, service booking reminders, etc.)
@@ -32,6 +35,8 @@ export async function POST(req: NextRequest) {
 
     let result;
     let notificationsSent = 0;
+
+    const supabase = getSupabaseClient();
 
     switch (type) {
       case "event_reminders":
