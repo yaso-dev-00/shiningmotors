@@ -18,7 +18,7 @@ import Layout from "@/components/Layout";
 import CartSummary from "@/components/shop/CartSummary";
 import AddressSelector from "@/components/shop/AddressSelector";
 import { RazorpayPayment } from "@/components/payment/RazorpayPayment";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, X, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 // import { StripePaymentForm } from "@/components/shop/StripePaymentForm"; // COMMENTED OUT FOR TESTING
 
@@ -32,8 +32,8 @@ const Checkout = () => {
   const [paymentMethod, setPaymentMethod] = useState<
     "razorpay" | "stripe" | "elements"
   >("razorpay");
-  const { isAuthenticated, user } = useAuth();
-  const { cartItems, addresses, clearCart, validateInventory } = useCart();
+  const { isAuthenticated, user, loading: authLoading } = useAuth();
+  const { cartItems, addresses, clearCart, validateInventory, isLoading: cartLoading } = useCart();
   const { toast } = useToast();
   const router = useRouter();
   const [defaultAddress, setDefaultAddress] = useState({});
@@ -386,6 +386,24 @@ const Checkout = () => {
     setOrderId(null);
   };
 
+  // Show loading state while auth or cart is loading
+  if (authLoading || cartLoading) {
+    return (
+      <Layout>
+        <div className="container mx-auto py-10">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="flex flex-col items-center">
+              <Loader2 className="h-12 w-12 animate-spin text-gray-900 mb-4" />
+              <h2 className="text-xl font-medium">Loading checkout...</h2>
+              <p className="text-gray-500 mt-2">Please wait</p>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Only check authentication after loading is complete
   if (!isAuthenticated) {
     return (
       <Layout>
@@ -411,6 +429,7 @@ const Checkout = () => {
     );
   }
 
+  // Only check cart after loading is complete
   if (cartItems.length === 0) {
     return (
       <Layout>

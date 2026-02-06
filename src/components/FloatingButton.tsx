@@ -12,6 +12,7 @@ import {
   Bike,
   Settings,
   X,
+  MessageCircle,
 } from "lucide-react";
 import NextLink from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -22,6 +23,11 @@ const allOptions = [
   { label: "Social Media Wall", icon: <Globe size={20} />, path: "/social" },
   { label: "Shop", icon: <ShoppingCart size={20} />, path: "/shop" },
   { label: "Vehicles", icon: <Car size={20} />, path: "/vehicles" },
+  {
+    label: "Messenger",
+    icon: <MessageCircle size={20} />,
+    path: "/messenger",
+  },
   { label: "Services", icon: <Hammer size={20} />, path: "/services" },
   { label: "Events", icon: <Calendar size={20} />, path: "/events" },
   { label: "Sim Racing", icon: <Gamepad2 size={20} />, path: "/sim-racing" },
@@ -30,6 +36,7 @@ const allOptions = [
     icon: <Bike size={20} />,
     path: "/moto-revolution",
   },
+ 
 ];
 
 export default function FloatingQuickSettings() {
