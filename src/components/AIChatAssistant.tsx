@@ -189,7 +189,8 @@ export const AIChatAssistant = () => {
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          className="fixed bottom-6 right-6 z-50"
+          // Align with other floating buttons in mobile view
+          className="fixed right-[12px] bottom-[75px] z-50 lg:right-6 lg:bottom-6"
         >
           <Button
             onClick={() => setIsOpen(true)}

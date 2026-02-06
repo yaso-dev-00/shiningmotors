@@ -6,6 +6,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { CartProvider } from "@/contexts/CartContext";
 import GlobalProvider from "@/contexts/GlobalContext";
 import { NotificationProvider } from "@/components/notifications/NotificationProvider";
+import { AIProvider } from "@/contexts/AIContext";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import ProgressBar from "@/components/ProgressBar";
@@ -53,12 +54,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         <AuthProvider>
           <NotificationProvider>
             <CartProvider>
-              <GlobalProvider>
-                <ProgressBar />
-                {children}
-                <Toaster />
-                <Sonner />
-              </GlobalProvider>
+              <AIProvider>
+                <GlobalProvider>
+                  <ProgressBar />
+                  {children}
+                  <Toaster />
+                  <Sonner />
+                </GlobalProvider>
+              </AIProvider>
             </CartProvider>
           </NotificationProvider>
         </AuthProvider>

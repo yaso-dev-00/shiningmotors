@@ -388,8 +388,8 @@ export const FAQDialog = ({ open, onOpenChange, onSelectQuestion }: FAQDialogPro
           </div>
 
           {/* Category Filter */}
-          <div className="overflow-x-auto -mx-6 px-6">
-            <div className="flex flex-wrap gap-2 min-w-max">
+          <div className="overflow-x-auto -mx-6 px-6 scrollbar-hide">
+            <div className="flex flex-wrap gap-2 min-w-max scrollbar-hide">
               <Button
                 variant={selectedCategory === "All" ? "default" : "outline"}
                 size="sm"
