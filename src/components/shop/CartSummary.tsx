@@ -159,7 +159,16 @@ const CartSummary = ({
           disabled={isCheckoutDisabled || isEmpty || hasOutOfStockItems}
           className="w-full bg-sm-red hover:bg-sm-red-light"
         >
-          {checkoutButtonText} <ArrowRight className="ml-2 h-4 w-4" />
+          {isCheckoutDisabled ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {checkoutButtonText}
+            </>
+          ) : (
+            <>
+              {checkoutButtonText} <ArrowRight className="ml-2 h-4 w-4" />
+            </>
+          )}
         </Button>
       )}
 

@@ -164,41 +164,45 @@ const AddressSelector = ({
 
       {/* Add Address Dialog */}
       <Dialog open={isAddFormOpen} onOpenChange={setIsAddFormOpen}>
-        <DialogContent className="sm:max-w-[550px] py-2 px-3 box-border ">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[550px] max-h-[90vh] flex flex-col py-2 px-3 box-border">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Add New Address</DialogTitle>
             <DialogDescription>
               Enter the details for your new shipping address.
             </DialogDescription>
           </DialogHeader>
-          <AddressForm
-            onSubmit={handleAddAddress}
-            onCancel={() => setIsAddFormOpen(false)}
-            isSubmitting={isSubmitting}
-          />
+          <div className="flex-1 overflow-y-auto scrollbar-hide p-2">
+            <AddressForm
+              onSubmit={handleAddAddress}
+              onCancel={() => setIsAddFormOpen(false)}
+              isSubmitting={isSubmitting}
+            />
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* Edit Address Dialog */}
       <Dialog open={isEditFormOpen} onOpenChange={setIsEditFormOpen}>
-        <DialogContent className="sm:max-w-[550px] p-3">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[550px] max-h-[90vh] flex flex-col p-3">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Edit Address</DialogTitle>
             <DialogDescription>
               Update your shipping address details.
             </DialogDescription>
           </DialogHeader>
-          {addressToEdit && (
-            <AddressForm
-              address={addressToEdit}
-              onSubmit={handleEditAddress}
-              onCancel={() => {
-                setIsEditFormOpen(false);
-                setAddressToEdit(null);
-              }}
-              isSubmitting={isSubmitting}
-            />
-          )}
+          <div className="flex-1 overflow-y-auto scrollbar-hide">
+            {addressToEdit && (
+              <AddressForm
+                address={addressToEdit}
+                onSubmit={handleEditAddress}
+                onCancel={() => {
+                  setIsEditFormOpen(false);
+                  setAddressToEdit(null);
+                }}
+                isSubmitting={isSubmitting}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>

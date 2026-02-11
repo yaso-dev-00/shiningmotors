@@ -281,25 +281,37 @@ export const CartProvider = ({ children }: CartProviderProps) => {
     if (!user) return;
 
     try {
-      // Using a direct query since user_addresses is not in the typed API yet
-      const { data, error } = await supabase
-        .from("user_addresses")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+      // Fetch through Next.js route handler to avoid any client-side caching issues
+      const headers = getAuthHeaders();
+      const res = await fetch(`/api/addresses?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        // If unauthorized, return empty array instead of throwing
+        if (res.status === 401) {
+          setAddresses([]);
+          return;
+        }
+        throw new Error(body?.error || "Failed to fetch addresses");
+      }
 
-      if (data) {
-        // Convert postal_code to string to match our Address interface
-        const formattedAddresses: Address[] = (data as DbAddress[]).map(
-          (addr) => ({
-            ...addr,
-            postal_code: addr.postal_code?.toString() || "",
-          })
-        );
+      const body = await res.json();
+      const data = body?.data as DbAddress[] | undefined;
+
+      if (data && Array.isArray(data)) {
+        const formattedAddresses: Address[] = data.map((addr) => ({
+          ...addr,
+          postal_code: addr.postal_code?.toString() || "",
+        }));
 
         setAddresses(formattedAddresses);
+      } else {
+        setAddresses([]);
       }
     } catch (error) {
       console.error("Error fetching addresses:", error);
@@ -309,7 +321,7 @@ export const CartProvider = ({ children }: CartProviderProps) => {
         variant: "destructive",
       });
     }
-  }, [user, toast]);
+  }, [user, toast, getAuthHeaders]);
 
   const fetchOrders = useCallback(async () => {
     if (!user) return;
@@ -852,7 +864,27 @@ export const CartProvider = ({ children }: CartProviderProps) => {
   const updateAddress = async (address: Address) => {
     if (isAuthenticated && user) {
       try {
-        // If setting as default, update all other addresses first
+        // Update local state immediately for instant UI feedback
+        if (address.is_default) {
+          // If setting as default, update all other addresses first in local state
+          const updatedAddresses = addresses.map((addr) => ({
+            ...addr,
+            is_default: addr.id === address.id ? true : false,
+          }));
+          // Update the specific address
+          const finalAddresses = updatedAddresses.map((addr) =>
+            addr.id === address.id ? address : addr
+          );
+          setAddresses(finalAddresses);
+        } else {
+          // Update the specific address in local state
+          const updatedAddresses = addresses.map((addr) =>
+            addr.id === address.id ? address : addr
+          );
+          setAddresses(updatedAddresses);
+        }
+
+        // If setting as default, update all other addresses first in database
         if (address.is_default) {
           await supabase
             .from("user_addresses")
@@ -879,13 +911,16 @@ export const CartProvider = ({ children }: CartProviderProps) => {
 
         if (error) throw error;
 
-        await fetchAddresses(); // Refetch all addresses
+        // Refetch to ensure state is in sync with database
+        await fetchAddresses();
 
         toast({
           description: "Address updated successfully",
         });
       } catch (error) {
         console.error("Error updating address:", error);
+        // Revert to previous state on error by refetching
+        await fetchAddresses();
         toast({
           title: "Error",
           description: "Failed to update address",
@@ -980,6 +1015,13 @@ export const CartProvider = ({ children }: CartProviderProps) => {
   const setDefaultAddress = async (addressId: string) => {
     if (isAuthenticated && user) {
       try {
+        // Update local state immediately for instant UI feedback
+        const updatedAddresses = addresses.map((addr) => ({
+          ...addr,
+          is_default: addr.id === addressId,
+        }));
+        setAddresses(updatedAddresses);
+
         // First, set all addresses to not default
         await supabase
           .from("user_addresses")
@@ -995,13 +1037,16 @@ export const CartProvider = ({ children }: CartProviderProps) => {
 
         if (error) throw error;
 
-        await fetchAddresses(); // Refetch all addresses
+        // Refetch to ensure state is in sync with database
+        await fetchAddresses();
 
         toast({
           description: "Default address updated",
         });
       } catch (error) {
         console.error("Error setting default address:", error);
+        // Revert to previous state on error by refetching
+        await fetchAddresses();
         toast({
           title: "Error",
           description: "Failed to update default address",

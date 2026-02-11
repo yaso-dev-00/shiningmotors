@@ -33,8 +33,11 @@ const addressSchema = z.object({
   country: z.string().min(1, "Country is required"),
   phone: z
     .string()
+    .regex(/^[0-9]+$/, "Phone number must contain only digits")
     .min(10, "Phone number must be at least 10 digits")
-    .optional(),
+    .max(15, "Phone number must not exceed 15 digits")
+    .optional()
+    .or(z.literal("")),
   is_default: z.boolean().default(false),
 });
 
@@ -66,26 +69,42 @@ const AddressForm = ({
     { code: "AE", name: "United Arab Emirates" },
   ];
 
-  // Update states when country changes
+  // Initialize states when component mounts or address changes
   useEffect(() => {
     if (selectedCountry) {
       const states = State.getStatesOfCountry(selectedCountry);
       setAvailableStates(states);
-      setSelectedState("");
-      form.setValue("state", "");
-      form.setValue("city", "");
-      setAvailableCities([]);
+      
+      // If editing and address has state, load cities for that state
+      if (address?.state && address.country === selectedCountry) {
+        const cities = City.getCitiesOfState(selectedCountry, address.state);
+        setAvailableCities(cities);
+        setSelectedState(address.state);
+      } else if (!address) {
+        // Only reset if not editing
+        setSelectedState("");
+        form.setValue("state", "");
+        form.setValue("city", "");
+        setAvailableCities([]);
+      }
     }
-  }, [selectedCountry]);
+  }, [selectedCountry, address?.country, address?.state]);
 
   // Update cities when state changes
   useEffect(() => {
     if (selectedState && selectedCountry) {
       const cities = City.getCitiesOfState(selectedCountry, selectedState);
       setAvailableCities(cities);
-      form.setValue("city", "");
+      
+      // If editing and address has city for this state, keep it
+      if (address?.state === selectedState && address?.city) {
+        form.setValue("city", address.city);
+      } else if (!address || address.state !== selectedState) {
+        // Reset city if state changed or not editing
+        form.setValue("city", "");
+      }
     }
-  }, [selectedState, selectedCountry]);
+  }, [selectedState, selectedCountry, address?.state, address?.city]);
 
   const form = useForm<AddressFormValues>({
     resolver: zodResolver(addressSchema) as any,
@@ -126,7 +145,17 @@ const AddressForm = ({
             <FormItem>
               <FormLabel>Phone Number</FormLabel>
               <FormControl>
-                <Input placeholder="(555) 123-4567" {...field} />
+                <Input 
+                  placeholder="1234567890" 
+                  type="tel"
+                  inputMode="numeric"
+                  {...field}
+                  onChange={(e) => {
+                    // Only allow digits
+                    const value = e.target.value.replace(/[^0-9]/g, '');
+                    field.onChange(value);
+                  }}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

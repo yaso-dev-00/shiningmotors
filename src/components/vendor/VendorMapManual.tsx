@@ -891,22 +891,21 @@ export const VendorMapManual = ({ onVendorSelect }: VendorMapManualProps) => {
     <div className="w-full h-[calc(100vh-64px)] flex flex-col bg-gray-50 relative overflow-hidden">
       {/* Compact Header */}
       <div className="bg-white border-b shadow-sm p-2 z-20 flex-shrink-0">
-        <div className="container mx-auto">
-          <div className="flex items-center justify-between gap-2">
-            <h1 className="text-sm md:text-lg font-bold text-gray-900 flex-shrink-0">
-              <span className="hidden sm:inline">Find Vendors</span>
-              <span className="sm:hidden">Vendors</span>
+        <div className="container mx-auto sm:px-4 px-2">
+          <div className="flex items-center justify-between sm:gap-2 gap-1">
+            <h1 className="text-sm md:text-lg font-bold text-gray-900 flex-shrink-0 hidden sm:block">
+              Find Vendors
             </h1>
             
             {/* Compact Search */}
-            <div className="flex-1 max-w-md mx-2">
+            <div className="flex-1 sm:max-w-md min-w-0">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4 z-10" />
                 <Input
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-8 h-8 text-sm"
+                  className="pl-8 pr-8 h-8 text-sm w-full"
                 />
                 {searchQuery && (
                   <button

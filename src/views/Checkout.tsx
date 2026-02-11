@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
@@ -36,48 +36,46 @@ const Checkout = () => {
   const { cartItems, addresses, clearCart, validateInventory, isLoading: cartLoading } = useCart();
   const { toast } = useToast();
   const router = useRouter();
-  const [defaultAddress, setDefaultAddress] = useState({});
 
   // Ref to trigger payment programmatically
   const paymentRef = useRef<{ triggerPayment: () => void }>(null);
 
   useEffect(() => {
-    // Set default address if available
-    const defaultAddress = addresses.find((addr) => addr.is_default);
-    if (defaultAddress) {
-      setSelectedAddressId(defaultAddress.id);
-      setDefaultAddress(defaultAddress);
-    } else if (addresses.length > 0) {
-      setSelectedAddressId(addresses[0].id);
-      setDefaultAddress(addresses[0]);
-    } else {
-      // No addresses available, reset selection
+    // When addresses change, ensure we have a valid selected address
+    if (!addresses || addresses.length === 0) {
       setSelectedAddressId(undefined);
-      setDefaultAddress({});
+      return;
     }
-  }, [addresses]);
 
-  // Additional check to ensure selectedAddressId is valid
-  useEffect(() => {
-    if (selectedAddressId && addresses.length > 0) {
-      const addressExists = addresses.find(
-        (addr) => addr.id === selectedAddressId
-      );
-      if (!addressExists) {
-        // Selected address no longer exists, reset selection
-        setSelectedAddressId(undefined);
-        setDefaultAddress({});
-      }
+    const defaultAddr = addresses.find((addr) => addr.is_default);
+    if (!selectedAddressId) {
+      // No selection yet, pick default or first
+      setSelectedAddressId(defaultAddr?.id ?? addresses[0].id);
+      return;
     }
-  }, [selectedAddressId, addresses]);
+
+    // If current selection no longer exists, fall back
+    const exists = addresses.some((addr) => addr.id === selectedAddressId);
+    if (!exists) {
+      setSelectedAddressId(defaultAddr?.id ?? addresses[0].id);
+    }
+  }, [addresses, selectedAddressId]);
 
   const handleAddressSelect = (addressId: string) => {
     setSelectedAddressId(addressId);
-    const selected = addresses.find((addr) => addr.id === addressId);
-    if (selected) {
-      setDefaultAddress(selected);
-    }
   };
+
+  const selectedAddress = useMemo(() => {
+    if (!addresses || addresses.length === 0) return undefined;
+
+    if (selectedAddressId) {
+      const found = addresses.find((addr) => addr.id === selectedAddressId);
+      if (found) return found;
+    }
+
+    const defaultAddr = addresses.find((addr) => addr.is_default);
+    return defaultAddr ?? addresses[0];
+  }, [addresses, selectedAddressId]);
 
   // Use the same calculation as CartSummary
   const subtotal = cartItems.reduce(
@@ -125,7 +123,7 @@ const Checkout = () => {
         .from("orders")
         .insert({
           user_id: user!.id,
-          shipping_address: defaultAddress,
+          shipping_address: selectedAddress ? JSON.parse(JSON.stringify(selectedAddress)) : null,
           total,
           status: "pending",
         })
@@ -152,11 +150,11 @@ const Checkout = () => {
       const { data, error } = await supabase.functions.invoke(
         "create-payment-intent",
         {
-          body: {
+            body: {
             amount: Math.round(total * 100), // Convert to cents
             orderId: orderData.id,
             cartItems,
-            shippingAddress: defaultAddress,
+            shippingAddress: selectedAddress,
           },
         }
       );
@@ -197,7 +195,7 @@ const Checkout = () => {
         .from("orders")
         .insert({
           user_id: user!.id,
-          shipping_address: defaultAddress,
+          shipping_address: selectedAddress ? JSON.parse(JSON.stringify(selectedAddress)) : null,
           total,
           status: "pending",
         })
@@ -237,9 +235,9 @@ const Checkout = () => {
       const { data, error } = await supabase.functions.invoke(
         "create-stripe-checkout",
         {
-          body: {
+            body: {
             cartItems,
-            shippingAddress: defaultAddress,
+            shippingAddress: selectedAddress,
             totalAmount: total,
             orderId: orderData.id,
           },
@@ -311,7 +309,7 @@ const Checkout = () => {
         .from("orders")
         .insert({
           user_id: user!.id,
-          shipping_address: defaultAddress,
+          shipping_address: selectedAddress ? JSON.parse(JSON.stringify(selectedAddress)) : null,
           total,
           status: "pending",
         })
