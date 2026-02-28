@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -33,7 +34,6 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import NextLink from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { shopApi } from "@/integrations/supabase/modules/shop";
 import { vendorAnalyticsApi, type ShopAnalytics } from "@/integrations/supabase/modules/vendorAnalytics";
 import { useToast } from "@/hooks/use-toast";
 import Back from "./Back";
@@ -47,9 +47,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { ArrowLeft } from 'lucide-react'
 
+import { useRouter } from "next/navigation"
 type Product = Database["public"]["Tables"]["products"]["Row"];
 
 interface OrderItem {
@@ -79,188 +80,193 @@ interface Order {
 }
 
 const ShopManagement = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
+  const pathname = usePathname();
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [analytics, setAnalytics] = useState<ShopAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [productStatus, setProductStatus] = useState<"active" | "disabled" | "all">("active");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [sortBy, setSortBy] = useState("newest");
+  const router = useRouter();
+  const initialFetchDone = React.useRef(false);
+
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const h: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) h["Authorization"] = `Bearer ${session.access_token}`;
+    return h;
+  }, [session?.access_token]);
 
   const fetchProducts = useCallback(async () => {
     if (!user) return;
-
     try {
       setLoading(true);
-      // First get all user products
-      const { data: allUserProducts, error: getAllError } =
-        await shopApi.products.getAll(user.id);
-
-      if (getAllError) throw getAllError;
-
-      if (!allUserProducts || allUserProducts.length === 0) {
-        setProducts([]);
-        return;
+      const res = await fetch(
+        `/api/vendor/products?sortBy=${sortBy}&status=${productStatus}&_t=${Date.now()}`,
+        { method: "GET", cache: "no-store", credentials: "include", headers: getAuthHeaders() }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) { setProducts([]); return; }
+        throw new Error(body?.error || "Failed to fetch products");
       }
-
-      // Get product IDs for filtering
-      const productIds = allUserProducts.map((p) => p.id);
-
-      // Use getFiltered with sorting
-      const { data: sortedProducts, error: getFilteredError } =
-        await shopApi.products.getFiltered({
-          ids: productIds,
-          sortBy: sortBy as "newest" | "price_asc" | "price_desc" | "updated",
-        });
-
-      if (getFilteredError) throw getFilteredError;
-
-      setProducts(sortedProducts || []);
+      const body = await res.json();
+      setProducts((body?.data || []) as Product[]);
     } catch (error: unknown) {
       console.error("Error fetching products:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load products",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load products", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  }, [user, sortBy, toast]);
+  }, [user, sortBy, productStatus, toast, getAuthHeaders]);
 
   const fetchOrders = useCallback(async () => {
     if (!user) return;
-
     try {
       setOrdersLoading(true);
-      const { data: orderTracking, error } =
-        await vendorAnalyticsApi.getOrderTracking(user.id);
-
-      if (error) throw error;
-
-      setOrders((orderTracking || []) as Order[]);
+      const res = await fetch(`/api/vendor/shop/orders?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) { setOrders([]); return; }
+        throw new Error(body?.error || "Failed to fetch orders");
+      }
+      const body = await res.json();
+      setOrders((body?.data || []) as Order[]);
     } catch (error: unknown) {
       console.error("Error fetching orders:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load orders",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load orders", variant: "destructive" });
     } finally {
       setOrdersLoading(false);
     }
-  }, [user, toast]);
+  }, [user, toast, getAuthHeaders]);
 
   const fetchAnalytics = useCallback(async () => {
     if (!user) return;
-
     try {
-      const { data: shopAnalytics, error } =
-        await vendorAnalyticsApi.getShopAnalytics(user.id);
-
-      if (error) throw error;
-
-      setAnalytics(shopAnalytics);
+      const res = await fetch(`/api/vendor/shop/analytics?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      setAnalytics(body?.data ?? null);
     } catch (error: unknown) {
       console.error("Error fetching analytics:", error);
     }
-  }, [user]);
+  }, [user, getAuthHeaders]);
 
   const fetchData = useCallback(async () => {
     await Promise.all([fetchProducts(), fetchOrders(), fetchAnalytics()]);
   }, [fetchProducts, fetchOrders, fetchAnalytics]);
 
   useEffect(() => {
-    if (user) {
+    if (user && !initialFetchDone.current) {
       fetchData();
+      initialFetchDone.current = true;
     }
   }, [user, fetchData]);
 
   useEffect(() => {
-    if (user) {
+    if (user && initialFetchDone.current) {
       fetchProducts();
     }
-  }, [sortBy, user, fetchProducts]);
+  }, [sortBy, productStatus]);
+
+  useEffect(() => {
+    if (!pathname?.includes("/vendor/shop-management")) return;
+    fetchData();
+  }, [pathname, fetchData]);
+
+  useEffect(() => {
+    const handler = () => {
+      if (!user || document.visibilityState !== "visible") return;
+      fetchData();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user, fetchData]);
 
   const handleDeleteClick = (product: Product) => {
     setProductToDelete(product);
     setShowDeleteDialog(true);
   };
 
+  const handleToggleStatus = async (productId: string, isDisabled: boolean) => {
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+    try {
+      const res = await fetch(`/api/vendor/products/${productId}/toggle-status`, {
+        method: "PATCH",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({ is_disabled: isDisabled }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Failed to update product status");
+
+      toast({
+        title: "Success",
+        description: body.message || (isDisabled ? "Product disabled successfully" : "Product enabled successfully"),
+      });
+
+      fetchProducts();
+    } catch (error: unknown) {
+      console.error("Error toggling product status:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update product status",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleDeleteProduct = async () => {
     if (!productToDelete) return;
 
     setDeleting(true);
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
-      // First, check if there's an associated social media post
-      const result = await supabase
-        .from("posts")
-        .select("id")
-        .eq("product_id", productToDelete.id)
-        .maybeSingle();
-      const existingPost = result.data as { id: string } | null;
-
-      // Delete the product
-      const { error } = await shopApi.products.delete(productToDelete.id);
-
-      if (error) throw error;
-
-      // Delete associated social media post if it exists
-      if (existingPost) {
-        // Delete related records first to avoid foreign key constraint violations
-        // 1. Delete saved_post records
-        await supabase
-          .from("saved_post")
-          .delete()
-          .eq("post_id", existingPost.id);
-
-        // 2. Delete likes
-        await supabase
-          .from("likes")
-          .delete()
-          .eq("post_id", existingPost.id);
-
-        // 3. Delete comments and their replies
-        const { data: comments } = await supabase
-          .from("comments")
-          .select("id")
-          .eq("post_id", existingPost.id);
-
-        if (comments && comments.length > 0) {
-          const commentIds = comments.map(c => c.id);
-          // Delete replies to these comments
-          await supabase
-            .from("comments")
-            .delete()
-            .in("parent_id", commentIds);
-          // Delete the comments themselves
-          await supabase
-            .from("comments")
-            .delete()
-            .eq("post_id", existingPost.id);
+      const res = await fetch(`/api/vendor/products/${productToDelete.id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (body.canDisable) {
+          setShowDeleteDialog(false);
+          toast({
+            title: "Cannot Delete",
+            description: body.error,
+            action: (
+              <Button onClick={() => handleToggleStatus(productToDelete.id, true)} size="sm">
+                Disable Instead
+              </Button>
+            ),
+          });
+          return;
         }
-
-        // 4. Now delete the post itself
-        const { error: postError } = await supabase
-          .from("posts")
-          .delete()
-          .eq("id", existingPost.id);
-        console.log(postError);
-        if (postError) {
-          console.warn("Failed to delete associated post:", postError);
-          // Don't throw error here as product is already deleted
-        }
+        throw new Error(body?.error ?? "Failed to delete product");
       }
 
       setProducts(
         products.filter((product) => product.id !== productToDelete.id)
       );
-      
+
       // Trigger revalidation for shop SSG/ISR
       try {
         await fetch("/api/shop/revalidate", {
@@ -274,17 +280,18 @@ const ShopManagement = () => {
       } catch (revalidateError) {
         console.error("Error triggering shop revalidation:", revalidateError);
       }
-      
+
       toast({
         title: "Success",
         description:
           "Product and associated social media post deleted successfully",
       });
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to delete product";
       console.error("Error deleting product:", error);
       toast({
         title: "Error",
-        description: "Failed to delete product",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -415,7 +422,14 @@ const ShopManagement = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <Back />
+      <div className="flex items-center justify-between px-4 relative top-3">
+            <div className="flex items-center space-x-2 gap-1">
+              <Button variant="outline" size="icon" onClick={() => router.push("/vendor-dashboard")} aria-label="Back">
+                   <ArrowLeft className="h-4 w-4" />
+              </Button>
+        <p>back</p>
+      </div>
+    </div>
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between">
@@ -508,11 +522,22 @@ const ShopManagement = () => {
           </div>
         )}
 
-        <Tabs defaultValue="inventory" className="w-full">
+        <Tabs 
+          defaultValue="inventory" 
+          className="w-full"
+          onValueChange={(value) => {
+            if (value === "disabled") {
+              setProductStatus("disabled");
+            } else if (value === "inventory" || value === "out-of-stock" || value === "products") {
+              setProductStatus("active");
+            }
+          }}
+        >
           <TabsList className="w-full">
-            <div className="flex overflow-scroll scrollbar-hide md:grid w-full grid-cols-6">
+            <div className="flex overflow-scroll scrollbar-hide md:grid w-full grid-cols-7">
               <TabsTrigger value="inventory">Inventory</TabsTrigger>
               <TabsTrigger value="out-of-stock">Out of Stock</TabsTrigger>
+              <TabsTrigger value="disabled">Disabled</TabsTrigger>
               <TabsTrigger value="orders">Order History</TabsTrigger>
               <TabsTrigger value="feedbacks">Feedbacks</TabsTrigger>
               <TabsTrigger value="growth">Growth</TabsTrigger>
@@ -661,6 +686,84 @@ const ShopManagement = () => {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="disabled">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <XCircle className="w-5 h-5 mr-2 text-gray-600" />
+                  Disabled Products
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+                    <p className="mt-2">Loading disabled products...</p>
+                  </div>
+                ) : products.length === 0 ? (
+                  <div className="text-center py-8">
+                    <CheckCircle className="w-16 h-16 mx-auto text-green-400 mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">
+                      No Disabled Products
+                    </h3>
+                    <p className="text-gray-600">
+                      All your products are currently active.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {products.map((product) => (
+                        <div
+                          key={product.id}
+                          className="border rounded-lg p-4 opacity-60 hover:opacity-100 transition-opacity"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-lg truncate">
+                                {product.name}
+                              </h3>
+                              <Badge variant="secondary" className="mt-1">
+                                Disabled
+                              </Badge>
+                            </div>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleToggleStatus(product.id, false)}
+                              >
+                                Enable
+                              </Button>
+                            </div>
+                          </div>
+                          {product.images && product.images.length > 0 && (
+                            <img
+                              src={product.images[0]!}
+                              alt={product.name}
+                              className="w-full h-32 object-cover rounded mb-2"
+                            />
+                          )}
+                          <p className="text-gray-600 text-sm mb-2">
+                            {product.category}
+                          </p>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xl font-bold text-gray-600">
+                              {formatCurrency(product.price)}
+                            </span>
+                            <Badge variant="outline">
+                              {product.inventory} in stock
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -943,18 +1046,32 @@ const ShopManagement = () => {
                       {products.map((product) => (
                         <div
                           key={product.id}
-                          className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                          className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${product.is_disabled ? 'opacity-50' : ''}`}
                         >
                           <div className="flex justify-between items-start mb-2">
-                            <h3 className="font-semibold text-lg truncate">
-                              {product.name}
-                            </h3>
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-lg truncate">
+                                {product.name}
+                              </h3>
+                              {product.is_disabled && (
+                                <Badge variant="secondary" className="mt-1">
+                                  Disabled
+                                </Badge>
+                              )}
+                            </div>
                             <div className="flex gap-1">
                           <NextLink href={`/vendor/shop/edit/${product.id}` as any}>
                             <Button variant="outline" size="sm">
                               <Edit className="w-4 h-4" />
                             </Button>
                           </NextLink>
+                              <Button
+                                variant={product.is_disabled ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handleToggleStatus(product.id, !product.is_disabled)}
+                              >
+                                {product.is_disabled ? "Enable" : "Disable"}
+                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"

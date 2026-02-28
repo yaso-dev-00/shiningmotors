@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,36 +9,56 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import NextLink from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { vehiclesApi, ExtendedVehicle } from '@/integrations/supabase/modules/vehicles';
+import { vehiclesApi } from '@/integrations/supabase/modules/vehicles';
+import type { ExtendedVehicle } from '@/integrations/supabase/modules/vehicles';
 import { useToast } from '@/hooks/use-toast';
 import Back from './Back';
 
 const VehicleManagement = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
+  const pathname = usePathname();
   const [vehicles, setVehicles] = useState<ExtendedVehicle[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchVehicles();
-  }, [user]);
-
-  const fetchVehicles = async () => {
+  const fetchVehicles = useCallback(async () => {
     if (!user) return;
-    
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+    };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+
     try {
       setLoading(true);
-      const { data, error } = await vehiclesApi.vehicles.getBySeller(user.id);
-      
-      if (error) throw error;
-      
-      // Transform data to match ExtendedVehicle type
-      const transformedVehicles: ExtendedVehicle[] = (data || []).map((vehicle) => ({
+      const res = await fetch(`/api/vendor/vehicles?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          setVehicles([]);
+          return;
+        }
+        throw new Error(body?.error || "Failed to fetch vehicles");
+      }
+
+      const body = await res.json();
+      const data = body?.data || [];
+
+      const transformedVehicles: ExtendedVehicle[] = data.map((vehicle: Record<string, unknown>) => ({
         ...vehicle,
-        fuel_type: vehicle.fuel_type || '',
-        status: vehicle.status || 'Available',
-      }));
-      
+        fuel_type: (vehicle.fuel_type as string) || '',
+        status: (vehicle.status as string) || 'Available',
+      })) as ExtendedVehicle[];
+
       setVehicles(transformedVehicles);
     } catch (error) {
       console.error('Error fetching vehicles:', error);
@@ -49,7 +70,27 @@ const VehicleManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, session?.access_token, toast]);
+
+  useEffect(() => {
+    fetchVehicles();
+  }, [fetchVehicles]);
+
+  // Refetch when returning to this page (e.g. after creating a vehicle)
+  useEffect(() => {
+    if (!pathname?.includes("/vendor/vehicle-management")) return;
+    fetchVehicles();
+  }, [pathname, fetchVehicles]);
+
+  // Refetch when page becomes visible (tab focus, back from create page)
+  useEffect(() => {
+    const handler = () => {
+      if (!user || document.visibilityState !== "visible") return;
+      fetchVehicles();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user, fetchVehicles]);
 
   const handleDeleteVehicle = async (id: string) => {
     if (!confirm('Are you sure you want to delete this vehicle?')) return;
@@ -90,11 +131,18 @@ const VehicleManagement = () => {
   };
 
   
-
+const router=useRouter()
   return (
     <div className="min-h-screen bg-gray-50">
       <Header /> 
-      <Back></Back>
+      <div className="flex items-center justify-between px-4 relative top-3">
+            <div className="flex items-center space-x-2 gap-1">
+              <Button variant="outline" size="icon" onClick={() => router.push("/vendor-dashboard")} aria-label="Back">
+                   <ArrowLeft className="h-4 w-4" />
+              </Button>
+        <p>back</p>
+      </div>
+      </div>
       <main className="container mx-auto px-4 py-8">
         
         <div className="mb-4 md:mb-8">

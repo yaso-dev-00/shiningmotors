@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { vendorApi, VendorRegistration, BranchInfo, CategorySpecificDetails } from '@/integrations/supabase/modules/vendors';
+import { VendorRegistration, BranchInfo, CategorySpecificDetails } from '@/integrations/supabase/modules/vendors';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Plus, AlertCircle } from 'lucide-react';
@@ -34,7 +34,7 @@ const VendorUpdateRequestForm: React.FC<VendorUpdateRequestFormProps> = ({
   onSuccess,
   onCancel
 }) => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [newCategories, setNewCategories] = useState<string[]>([]);
@@ -276,23 +276,33 @@ const VendorUpdateRequestForm: React.FC<VendorUpdateRequestFormProps> = ({
           break;
       }
 
-      await vendorApi.createUpdateRequest({
-        vendor_registration_id: vendorRegistration.id,
-        request_type: data.request_type,
-        requested_changes: requestedChanges as any,
-        current_data: {
-          categories: vendorRegistration.categories,
-          branches: vendorRegistration.branches,
-          category_specific_details: vendorRegistration.category_specific_details
-        },
-        requested_by: user.id
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      const res = await fetch("/api/vendor/update-requests", {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({
+          vendor_registration_id: vendorRegistration.id,
+          request_type: data.request_type,
+          requested_changes: requestedChanges,
+          current_data: {
+            categories: vendorRegistration.categories,
+            branches: vendorRegistration.branches,
+            category_specific_details: vendorRegistration.category_specific_details
+          },
+          requested_by: user.id
+        }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to submit update request");
+      }
 
       toast({
         title: "Request Submitted",
         description: "Your update request has been submitted for admin review"
       });
-      
       onSuccess();
     } catch (error) {
       console.error('Error submitting update request:', error);

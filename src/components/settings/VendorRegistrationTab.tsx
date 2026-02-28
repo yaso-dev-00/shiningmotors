@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { vendorApi } from '@/integrations/supabase/modules/vendors';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,44 +11,58 @@ import VendorRegistrationHistory from '@/components/vendor/VendorRegistrationHis
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle, Clock, XCircle, Building, History, User, FileText } from 'lucide-react';
 import NextLink from "next/link";
+import { useQuery } from '@tanstack/react-query';
 
 const VendorRegistrationTab = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
-  const [vendorData, setVendorData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [showStepOne, setShowStepOne] = useState(false);
   const [showStepTwo, setShowStepTwo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
-  useEffect(() => {
-    fetchVendorData();
-  }, [user]);
-
-  const fetchVendorData = async () => {
-    if (!user) return;
-    
-    try {
-      const { data, error } = await vendorApi.getByUserId(user.id);
-      if (error && error.code !== 'PGRST116') {
-        throw error;
+  const { data: vendorData, isLoading: loading, refetch } = useQuery({
+    queryKey: ['vendor-registration', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
       }
-      setVendorData(data);
-    } catch (error) {
-      console.error('Error fetching vendor data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      
+      // Add timestamp to prevent browser caching
+      const timestamp = Date.now();
+      const response = await fetch(`/api/vendor/registration?_t=${timestamp}`, {
+        method: 'GET',
+        headers,
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to fetch vendor registration');
+      }
+
+      const result = await response.json();
+      return result.data?.registration || null;
+    },
+    enabled: !!user,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+  });
 
   const handleStepOneSuccess = () => {
     setShowStepOne(false);
-    fetchVendorData();
+    refetch();
   };
 
   const handleStepTwoSuccess = () => {
     setShowStepTwo(false);
-    fetchVendorData();
+    refetch();
   };
 
   // Determine current step based on data completeness and step field

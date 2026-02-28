@@ -28,6 +28,7 @@ export interface ServicePost {
   contact?: string | null;
   category: string | null;
   media_urls?: string[] | null;
+  is_disabled?: boolean;
   profile?: {
     username: string | null;
     full_name: string | null;
@@ -104,6 +105,7 @@ export const getAllServices = async (): Promise<{
         *,
         profile:profiles(username, full_name, avatar_url)
       `)
+      .eq("is_disabled", false)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -155,6 +157,7 @@ export const getServiceByCategory=async(category:string):Promise<{data:ServicePo
         profile:profiles(username, full_name, avatar_url)
       `)
       .eq("category", category)
+      .eq("is_disabled", false)
     
 
     if (error) {
@@ -300,52 +303,36 @@ export const bookService = async (
 }
 
 /**
- * Delete a service by ID
+ * Delete a service by ID (from the services table - vendor services).
+ * Fails if the service has any bookings.
  */
-export const deleteService = async (id: string): Promise<{ 
-  success: boolean; 
-  error: Error | unknown 
+export const deleteService = async (id: string): Promise<{
+  success: boolean;
+  error: Error | unknown;
 }> => {
   try {
-    // Delete related records first to avoid foreign key constraint violations
-    // 1. Delete saved_post records
-    await supabase
-      .from("saved_post")
-      .delete()
-      .eq("post_id", id);
-
-    // 2. Delete likes
-    await supabase
-      .from("likes")
-      .delete()
-      .eq("post_id", id);
-
-    // 3. Delete comments and their replies
-    const { data: comments } = await supabase
-      .from("comments")
+    const { data: bookings, error: countError } = await supabase
+      .from("service_bookings")
       .select("id")
-      .eq("post_id", id);
+      .eq("service_id", id)
+      .limit(1);
 
-    if (comments && comments.length > 0) {
-      const commentIds = comments.map(c => c.id);
-      // Delete replies to these comments
-      await supabase
-        .from("comments")
-        .delete()
-        .in("parent_id", commentIds);
-      // Delete the comments themselves
-      await supabase
-        .from("comments")
-        .delete()
-        .eq("post_id", id);
+    if (countError) {
+      console.error("Error checking service bookings:", countError);
+      return { success: false, error: countError };
     }
 
-    // 4. Now delete the post itself
+    if (bookings && bookings.length > 0) {
+      return {
+        success: false,
+        error: new Error("Cannot delete service that has existing bookings."),
+      };
+    }
+
     const { error } = await supabase
-      .from("posts")
+      .from("services")
       .delete()
-      .eq("id", id)
-      .eq("category", "Service");
+      .eq("id", id);
 
     if (error) {
       console.error("Error deleting service:", error);

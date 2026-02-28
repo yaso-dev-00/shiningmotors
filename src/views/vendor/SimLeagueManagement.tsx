@@ -1,87 +1,110 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Trophy, Plus, Edit, Trash2, Users, Calendar } from 'lucide-react';
+import { Trophy, Plus, Edit, Trash2, Users, Calendar, ArrowLeft } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import NextLink from "next/link";
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import Back from './Back';
 import type { Database } from '@/integrations/supabase/types';
+import { useRouter } from "next/navigation"
 
 type SimLeague = Database['public']['Tables']['sim_leagues']['Row'];
 
 const SimLeagueManagement = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
   const [leagues, setLeagues] = useState<SimLeague[]>([]);
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchLeagues();
-  }, [user]);
-
-  const fetchLeagues = async () => {
+  const fetchLeagues = useCallback(async () => {
     if (!user) return;
-    
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('sim_leagues')
-        .select('*')
-        .eq('organizer_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      setLeagues((data || []) as SimLeague[]);
+      const res = await fetch(`/api/vendor/sim-leagues?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) { setLeagues([]); return; }
+        throw new Error(body?.error || "Failed to fetch sim leagues");
+      }
+      const body = await res.json();
+      setLeagues((body?.data || []) as SimLeague[]);
     } catch (error: unknown) {
       console.error('Error fetching leagues:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load sim leagues",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load sim leagues", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, session?.access_token, toast]);
+
+  useEffect(() => { fetchLeagues(); }, [fetchLeagues]);
+  useEffect(() => {
+    if (!pathname?.includes("/vendor/simleague-management")) return;
+    fetchLeagues();
+  }, [pathname, fetchLeagues]);
+  useEffect(() => {
+    const handler = () => {
+      if (!user || document.visibilityState !== "visible") return;
+      fetchLeagues();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user, fetchLeagues]);
 
   const handleDeleteLeague = async (id: string) => {
     if (!confirm('Are you sure you want to delete this league?')) return;
-    
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
-      const { error } = await supabase
-        .from('sim_leagues')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-      
+      const res = await fetch(`/api/vendor/sim-leagues/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Failed to delete league");
       setLeagues(leagues.filter((league: SimLeague) => league.id !== id));
       toast({
         title: "Success",
         description: "League deleted successfully",
       });
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to delete league";
       console.error('Error deleting league:', error);
       toast({
         title: "Error",
-        description: "Failed to delete league",
+        description: message,
         variant: "destructive",
       });
     }
   };
 
+  const router=useRouter()
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <Back />
+      <div className="flex items-center justify-between px-4 relative top-3">
+            <div className="flex items-center space-x-2 gap-1">
+              <Button variant="outline" size="icon" onClick={()=>router.push('/vendor/simracing-management' as any)} aria-label="Back">
+                   <ArrowLeft className="h-4 w-4" />
+              </Button>
+        <p>back</p>
+      </div>
+    </div>
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between">

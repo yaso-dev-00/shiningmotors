@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   sendVendorEmail,
   vendorApi,
@@ -47,12 +47,12 @@ import UpdateRequestDetailsModal from "@/components/vendor/UpdateRequestDetailsM
 import UpdateRequestRejectionModal from "@/components/vendor/UpdateRequestRejectionModal";
 import { DocumentCard } from "@/components/vendor/EnhancedVendorProfile";
 import { Label } from "@/components/ui/label";
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 
 const VendorManagement = () => {
   const { toast } = useToast();
-  const [vendors, setVendors] = useState<any[]>([]);
-  const [updateRequests, setUpdateRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { session } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVendor, setSelectedVendor] = useState<any>(null);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
@@ -63,35 +63,43 @@ const VendorManagement = () => {
   const [emailLoading, setEmailLoading] = useState<string | null>(null);
   const [showVendorData, setShowVendorData] = useState<any>(null);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const { data: vendorsData, isLoading: loading, refetch } = useQuery({
+    queryKey: ['admin-vendors'],
+    queryFn: async () => {
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+      
+      // Add timestamp to prevent browser caching
+      const timestamp = Date.now();
+      const response = await fetch(`/api/admin/vendors?_t=${timestamp}`, {
+        method: 'GET',
+        headers,
+        cache: 'no-store',
+      });
 
-  const fetchData = async () => {
-    try {
-      const [vendorsResult, requestsResult] = await Promise.all([
-        vendorApi.admin.getAll(),
-        vendorApi.admin.getAllUpdateRequests(),
-      ]);
-
-      if (vendorsResult.error) throw vendorsResult.error;
-      if (requestsResult.error && requestsResult.error.code !== "PGRST116") {
-        throw requestsResult.error;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to fetch vendors');
       }
 
-      setVendors(vendorsResult.data || []);
-      setUpdateRequests(requestsResult.data || []);
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load vendor data",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+      const result = await response.json();
+      return {
+        vendors: result.data?.vendors || [],
+        updateRequests: result.data?.updateRequests || [],
+      };
+    },
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+  });
+
+  const vendors = vendorsData?.vendors || [];
+  const updateRequests = vendorsData?.updateRequests || [];
 
   const handleApproveStepOne = async (vendor: any, vendorId: string) => {
     try {
@@ -109,7 +117,7 @@ const VendorManagement = () => {
         "registration"
       );
 
-      fetchData();
+      refetch();
     } catch (error) {
       console.error("Error approving Step 1:", error);
       toast({
@@ -128,7 +136,7 @@ const VendorManagement = () => {
         title: "Step 1 Rejected",
         description: "Vendor has been notified",
       });
-      const requestData = vendors.find((item) => item.user_id == vendorId);
+      const requestData = vendors.find((item: any) => item.user_id == vendorId);
       await sendVendorEmail(
         requestData.email,
         requestData.personal_name,
@@ -138,7 +146,7 @@ const VendorManagement = () => {
         reason
       );
 
-      fetchData();
+      refetch();
     } catch (error) {
       console.error("Error rejecting Step 1:", error);
       toast({
@@ -166,7 +174,7 @@ const VendorManagement = () => {
         "vendor approval",
         "registration"
       );
-      fetchData();
+      refetch();
     } catch (error) {
       console.error("Error approving vendor:", error);
       toast({
@@ -211,7 +219,7 @@ const VendorManagement = () => {
       setShowRejectDialog(false);
       setRejectionReason("");
       setSelectedVendor(null);
-      fetchData();
+      refetch();
     } catch (error) {
       console.error("Error rejecting vendor:", error);
       toast({
@@ -238,7 +246,7 @@ const VendorManagement = () => {
         title: "Request Approved",
         description: "Update request has been approved successfully",
       });
-      fetchData();
+      refetch();
     } catch (error) {
       console.error("Error approving request:", error);
       toast({
@@ -263,7 +271,7 @@ const VendorManagement = () => {
       });
       setShowRejectRequestModal(false);
       setSelectedRequest(null);
-      fetchData();
+      refetch();
     } catch (error) {
       console.error("Error rejecting request:", error);
       toast({
@@ -406,7 +414,7 @@ const VendorManagement = () => {
     return 2;
   };
 
-  const filteredVendors = vendors.filter((vendor) => {
+  const filteredVendors = vendors.filter((vendor: any) => {
     if (!vendor) return false;
     
     // If search query is empty, show all vendors
@@ -430,7 +438,7 @@ const VendorManagement = () => {
     );
   });
   console.log(updateRequests);
-  const filteredRequests = updateRequests.filter((request) => {
+  const filteredRequests = updateRequests.filter((request: any) => {
     if (!request || !request.vendor_registration) return false;
     
     // If search query is empty, show all requests
@@ -538,7 +546,7 @@ const VendorManagement = () => {
             </TabsTrigger>
             <TabsTrigger value="requests">
               Update Requests (
-              {filteredRequests.filter((r) => r && r.status === "pending").length}
+              {filteredRequests.filter((r: any) => r && r.status === "pending").length}
               )
             </TabsTrigger>
           </TabsList>
@@ -588,7 +596,7 @@ const VendorManagement = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredVendors.map((vendor) => (
+                      {filteredVendors.map((vendor: any) => (
                         <TableRow key={vendor?.id || "unknown"}>
                           <TableCell className="font-medium">
                             {vendor?.business_name ||
@@ -734,7 +742,7 @@ const VendorManagement = () => {
                   </div>
                 ) : (
                   <div className="space-y-2 md:space-y-4">
-                    {filteredRequests.map((request) => (
+                    {filteredRequests.map((request: any) => (
                       <div
                         key={request?.id || "unknown"}
                         className="border rounded-lg p-2 md:p-4"

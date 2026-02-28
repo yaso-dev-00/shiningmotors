@@ -21,6 +21,8 @@ import { AvailabilitySelector } from "./ServiceEdit";
 const ServiceCreate = () => {
   const { user } = useAuth();
   const router = useRouter();
+  const isVendorContext =
+    typeof window !== "undefined" && window.location.pathname.includes("/vendor/");
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [images, setImages] = useState<File[]>([]);
@@ -132,7 +134,7 @@ console.log(errors,values)
         description: "Service created successfully",
       });
 
-      router.back();
+      router.push((isVendorContext ? "/vendor/service-management" : "/admin/services") as any);
     } catch (error: any) {
       console.error("Error creating service:", error);
       toast({
@@ -146,7 +148,7 @@ console.log(errors,values)
   };
 
   return (
-    <AdminLayout title="Create Service" backLink="/admin/services">
+    <AdminLayout title="Create Service" backLink={isVendorContext ? "/vendor/service-management" : "/admin/services"}>
       <div className="bg-white p-6 rounded-lg shadow-sm">
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -310,7 +312,7 @@ console.log(errors,values)
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push("/admin/services" as any)}
+              onClick={() => router.push((isVendorContext ? "/vendor/service-management" : "/admin/services") as any)}
               disabled={isSubmitting}
             >
               Cancel

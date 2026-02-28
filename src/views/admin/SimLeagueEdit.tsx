@@ -73,25 +73,36 @@ const SimLeagueEdit = () => {
   const isEditing = !!id;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const isVendorContext =
     typeof window !== "undefined" &&
     window.location.pathname.includes("/vendor/");
   const isInitializingRef = useRef(false);
    
-  // Fetch league data if editing
+  // Fetch league data if editing (route handler, no cache)
   const { data: league, isLoading } = useQuery({
     queryKey: ["simLeague", stringId],
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
     queryFn: async () => {
       if (!stringId) return null;
-      const { data, error } = await simRacingApi.leagues.getById(stringId);
-      if (error) {
-        console.error("Error fetching league:", error);
+      const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      const res = await fetch(`/api/vendor/sim-leagues/${stringId}?_t=${Date.now()}`, {
+        method: "GET",
+        credentials: "include",
+        headers,
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error("Error fetching league:", body?.error);
         return null;
       }
-      return data;
+      return body as SimLeague;
     },
-    enabled: isEditing,
+    enabled: isEditing && !!stringId,
   });
 
   const form = useForm<FormValues>({
@@ -107,6 +118,9 @@ const SimLeagueEdit = () => {
       points_system: undefined,
     },
   });
+
+  // Get today's date in YYYY-MM-DD format for min date validation
+  const today = new Date().toISOString().split('T')[0];
 
   // Update form values when league data is loaded
   useEffect(() => {
@@ -389,7 +403,7 @@ const SimLeagueEdit = () => {
                     <FormItem>
                       <FormLabel>Start Date*</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Input type="date" min={today} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -404,7 +418,7 @@ const SimLeagueEdit = () => {
                     <FormItem>
                       <FormLabel>End Date*</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Input type="date" min={form.watch("start_date") || today} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -462,7 +476,7 @@ const SimLeagueEdit = () => {
                 <Button 
                   type="button" 
                   variant="outline" 
-                  onClick={() => router.push("/admin/sim-leagues" as any)}
+                  onClick={() => router.push((isVendorContext ? "/vendor/simleague-management" : "/admin/sim-leagues") as any)}
                 >
                   Cancel
                 </Button>

@@ -534,6 +534,7 @@ export type Database = {
           id: string
           images: string[] | null
           inventory: number
+          is_disabled: boolean
           name: string
           parts: string | null
           price: number
@@ -556,6 +557,7 @@ export type Database = {
           id?: string
           images?: string[] | null
           inventory?: number
+          is_disabled?: boolean
           name: string
           parts?: string | null
           price: number
@@ -576,6 +578,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_disabled?: boolean
           images?: string[] | null
           inventory?: number
           name?: string
@@ -837,6 +840,7 @@ export type Database = {
           description: string | null;
           duration: string | null;
           id: string;
+          is_disabled: boolean;
           location: string | null;
           media_urls: string[] | null;
           price: string | null;
@@ -851,6 +855,7 @@ export type Database = {
           description?: string | null;
           duration?: string | null;
           id?: string;
+          is_disabled?: boolean;
           location?: string | null;
           media_urls?: string[] | null;
           price?: string | null;
@@ -865,6 +870,7 @@ export type Database = {
           description?: string | null;
           duration?: string | null;
           id?: string;
+          is_disabled?: boolean;
           location?: string | null;
           media_urls?: string[] | null;
           price?: string | null;
@@ -1752,6 +1758,7 @@ export type Database = {
           features: Json | null;
           id: string;
           image_url: string[] | null;
+          is_disabled: boolean;
           name: string;
           price: number;
           stock: number | null;
@@ -1765,6 +1772,7 @@ export type Database = {
           features?: Json | null;
           id?: string;
           image_url?: string[] | null;
+          is_disabled?: boolean;
           name: string;
           price: number;
           stock?: number | null;
@@ -1778,6 +1786,7 @@ export type Database = {
           features?: Json | null;
           id?: string;
           image_url?: string[] | null;
+          is_disabled?: boolean;
           name?: string;
           price?: number;
           stock?: number | null;

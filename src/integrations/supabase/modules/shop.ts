@@ -70,6 +70,9 @@ export const shopApi = {
       const { page = 1, pageSize = 15 } = filters;
       let query = supabase.from("products").select("*", { count: "exact" });
 
+      // Filter out disabled products for public view
+      query = query.eq("is_disabled", false);
+
       if (filters.ids && filters.ids.length > 0) {
         query = query.in("id", filters.ids);
       }

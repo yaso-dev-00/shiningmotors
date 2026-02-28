@@ -73,14 +73,22 @@ async function fetchCartWithProducts(supabase: Awaited<ReturnType<typeof createA
   let simProductsMap: Record<string, any> = {};
 
   if (ids.length > 0) {
-    // Fetch shop products
-    const { data: products } = await supabase.from("products").select("*").in("id", ids);
+    // Fetch shop products (only non-disabled)
+    const { data: products } = await supabase
+      .from("products")
+      .select("*")
+      .in("id", ids)
+      .eq("is_disabled", false);
     if (products) {
       for (const p of products) productsMap[p.id] = p;
     }
 
-    // Fetch sim products
-    const { data: simProducts } = await supabase.from("sim_products").select("*").in("id", ids);
+    // Fetch sim products (only non-disabled)
+    const { data: simProducts } = await supabase
+      .from("sim_products")
+      .select("*")
+      .in("id", ids)
+      .eq("is_disabled", false);
     if (simProducts) {
       for (const p of simProducts) simProductsMap[p.id] = p;
     }
@@ -136,6 +144,30 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = await auth.supabase;
+    
+    // Check if product exists and is not disabled
+    const { data: product } = await supabase
+      .from("products")
+      .select("id, is_disabled")
+      .eq("id", productId)
+      .maybeSingle();
+    
+    const { data: simProduct } = await supabase
+      .from("sim_products")
+      .select("id, is_disabled")
+      .eq("id", productId)
+      .maybeSingle();
+    
+    const foundProduct = product || simProduct;
+    
+    if (!foundProduct) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+    
+    if (foundProduct.is_disabled) {
+      return NextResponse.json({ error: "This product is no longer available" }, { status: 400 });
+    }
+
     const { data: existing } = await supabase
       .from("cart_items")
       .select("id, quantity")

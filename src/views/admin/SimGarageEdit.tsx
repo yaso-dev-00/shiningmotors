@@ -23,6 +23,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/components/ui/use-toast";
 import { simRacingApi, SimGarage } from "@/integrations/supabase/modules/simRacing";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Schema for form validation (input schema - string for services_offered)
 const formInputSchema = z.object({
@@ -41,26 +42,39 @@ type FormValues = z.infer<typeof formInputSchema>;
 
 const SimGarageEdit = () => {
   const { id } = useParams<{ id: string }>();
+  const stringId = Array.isArray(id) ? id[0] : id;
   const router = useRouter();
-  const isEditing = !!id;
+  const isEditing = !!stringId;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { session } = useAuth();
   const isVendorContext =
     typeof window !== "undefined" &&
     window.location.pathname.includes("/vendor/");
 
-  // Fetch garage data if editing
+  // Fetch garage data if editing (route handler, no cache)
   const { data: garage, isLoading } = useQuery({
-    queryKey: ["simGarage", id],
+    queryKey: ["simGarage", stringId],
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
     queryFn: async () => {
-      if (!id) return null;
-      const { data, error } = await simRacingApi.garages.getById(id);
-      if (error) {
-        console.error("Error fetching garage:", error);
+      if (!stringId) return null;
+      const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      const res = await fetch(`/api/vendor/sim-garages/${stringId}?_t=${Date.now()}`, {
+        method: "GET",
+        credentials: "include",
+        headers,
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error("Error fetching garage:", body?.error);
         return null;
       }
-      return data;
+      return body as SimGarage;
     },
-    enabled: isEditing,
+    enabled: isEditing && !!stringId,
   });
 
   const form = useForm<FormValues>({
@@ -117,8 +131,8 @@ const SimGarageEdit = () => {
         services_offered: servicesArray,
       };
 
-      if (isEditing && id) {
-        await simRacingApi.garages.update(id, garageData);
+      if (isEditing && stringId) {
+        await simRacingApi.garages.update(stringId, garageData);
         toast({
           title: "Garage Updated",
           description: "The garage has been successfully updated.",
@@ -130,7 +144,7 @@ const SimGarageEdit = () => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              id,
+              id: stringId,
               entityType: "garage",
               action: "update",
             }),
@@ -355,7 +369,7 @@ const SimGarageEdit = () => {
                 <Button 
                   type="button" 
                   variant="outline" 
-                  onClick={() => router.push("/admin/sim-garages" as any)}
+                  onClick={() => router.push((isVendorContext ? "/vendor/simgarage-management" : "/admin/sim-garages") as any)}
                 >
                   Cancel
                 </Button>

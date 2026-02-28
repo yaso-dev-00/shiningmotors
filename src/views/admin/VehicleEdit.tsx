@@ -44,6 +44,8 @@ const VehicleEdit = () => {
   const id = (params?.id as string) ?? "";
   const router = useRouter();
   const { toast } = useToast();
+  const isVendorContext =
+    typeof window !== "undefined" && window.location.pathname.includes("/vendor/");
   const [loading, setLoading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [existingImages, setExistingImages] = useState<string[]>([]);
@@ -265,7 +267,7 @@ const VehicleEdit = () => {
         });
       }
       
-      router.back();
+      router.push((isVendorContext ? "/vendor/vehicle-management" : "/admin/vehicles") as any);
       
     } catch (error) {
       console.error("Error saving vehicle:", error);
@@ -280,7 +282,7 @@ const VehicleEdit = () => {
   };
 
   return (
-    <AdminLayout title={isEditing ? "Edit Vehicle" : "Create Vehicle"} backLink="/admin/vehicles">
+    <AdminLayout title={isEditing ? "Edit Vehicle" : "Create Vehicle"} backLink={isVendorContext ? "/vendor/vehicle-management" : "/admin/vehicles"}>
       <Card>
         <CardContent className="p-6">
           <form onSubmit={handleSubmit} className="space-y-4 md:space-y-6">
@@ -557,7 +559,7 @@ const VehicleEdit = () => {
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={() => router.push('/admin/vehicles' as any)}
+                onClick={() => router.push((isVendorContext ? "/vendor/vehicle-management" : "/admin/vehicles") as any)}
               >
                 Cancel
               </Button>

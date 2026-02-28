@@ -91,7 +91,7 @@ const SimEventEdit = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [leaguesId,setleaguesId]=useState<SimLeague[]>([])
   const [startDate,setStartdate]=useState("")
-  const {user}=useAuth()
+  const { user, session } = useAuth();
   const isInitializingRef = useRef(false);
   // Fetch leagues for dropdown
   const { data: leagues = [] } = useQuery({
@@ -120,19 +120,30 @@ const SimEventEdit = () => {
   });
 
  
-  // Fetch event data if editing
+  // Fetch event data if editing (route handler, no cache)
   const { data: event, isLoading } = useQuery({
     queryKey: ["simEvent", stringId],
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
     queryFn: async () => {
       if (!stringId) return null;
-      const { data, error } = await simRacingApi.events.getById(stringId);
-      if (error) {
-        console.error("Error fetching event:", error);
+      const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      const res = await fetch(`/api/vendor/sim-events/${stringId}?_t=${Date.now()}`, {
+        method: "GET",
+        credentials: "include",
+        headers,
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error("Error fetching event:", body?.error);
         return null;
       }
-      return data;
+      return body as SimEvent;
     },
-    enabled: isEditing,
+    enabled: isEditing && !!stringId,
   });
   useEffect(()=>{
     if(!isEditing && leagues && allEvents && leagues.length)
@@ -185,6 +196,9 @@ description: "You've already added events for all available leagues."
       replay_url: "",
     },
   });
+
+  // Get today's date in YYYY-MM-DD format for min date validation
+  const today = new Date().toISOString().split('T')[0];
   useEffect(() => {
     const selectedLeagueId = form.watch("league_id");
     const league = leagues.find((l) => l.id === selectedLeagueId);
@@ -240,6 +254,15 @@ description: "You've already added events for all available leagues."
           shouldDirty: false,
         });
       }
+      
+      // Explicitly set event_type so the Event Type dropdown displays the value
+      const eventType = (event.event_type && ["race", "time_trial", "qualification", "practice", "championship", "bootcamp", "tournament"].includes(event.event_type))
+        ? event.event_type
+        : "race";
+      form.setValue("event_type", eventType as "race" | "time_trial" | "qualification" | "practice" | "championship" | "bootcamp" | "tournament", {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
       
       // Explicitly set registration_type to ensure Select component receives it
       form.setValue("registration_type", registrationType as "solo" | "team" | "invitation_only" | "open", {
@@ -389,9 +412,9 @@ description: "You've already added events for all available leagues."
                     <FormItem>
                       <FormLabel>Event Type*</FormLabel>
                       <Select
+                        key={`event-type-${field.value || "default"}`}
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        value={field.value}
+                        value={field.value || undefined}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -537,7 +560,7 @@ description: "You've already added events for all available leagues."
                     <FormItem>
                       <FormLabel>Start Date*</FormLabel>
                       <FormControl>
-                        <Input max={startDate} type="date" {...field} />
+                        <Input min={today} max={startDate} type="date" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -554,7 +577,7 @@ description: "You've already added events for all available leagues."
                     <FormItem>
                       <FormLabel>End Date*</FormLabel>
                       <FormControl>
-                        <Input type="date"    disabled={!!form.getValues().league_id} {...field} />
+                        <Input type="date" min={form.watch("start_date") || today} disabled={!!form.getValues().league_id} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -678,7 +701,7 @@ description: "You've already added events for all available leagues."
                 <Button 
                   type="button" 
                   variant="outline" 
-                  onClick={() => router.push("/admin/sim-events" as any)}
+                  onClick={() => router.push((isVendorContext ? "/vendor/simevent-management" : "/admin/sim-events") as any)}
                 >
                   Cancel
                 </Button>

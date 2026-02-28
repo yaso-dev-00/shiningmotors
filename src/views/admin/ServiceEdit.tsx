@@ -27,7 +27,8 @@ import {
 
 const ServiceEdit = () => {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const stringId = Array.isArray(id) ? id[0] : id;
+  const { user, session } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -63,42 +64,47 @@ const ServiceEdit = () => {
   } = useFormValidation<ServiceData>(initialFormValues);
 
   useEffect(() => {
-    if (id) {
-      fetchService(id);
+    if (stringId) {
+      fetchService(stringId);
     }
-  }, [id]);
+  }, [stringId]);
   console.log(values.category);
   const fetchService = async (serviceId: string) => {
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
       setIsLoading(true);
-      const { data, error, parsedData } = await getServiceById(serviceId);
-
-      if (error) throw error;
-
+      const res = await fetch(`/api/vendor/services/${serviceId}?_t=${Date.now()}`, {
+        method: "GET",
+        credentials: "include",
+        headers,
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error ?? "Failed to load service");
+      }
+      const data = body;
       if (!data) {
         toast({
           title: "Error",
           description: "Service not found",
           variant: "destructive",
         });
-        router.back();
+        router.push((isVendorContext ? "/vendor/service-management" : "/admin/services") as any);
         return;
       }
-
-      if (data) {
-        setMultipleValues({
-          title: data.title ?? "",
-          description: data.description ?? "",
-          price: data.price ?? "",
-          location: data.location ?? "",
-          category: data.category ?? "",
-          duration: data.duration ?? "",
-          contact: data.contact ?? "",
-          availability: (data.availability as any) ?? {},
-        });
-      }
+      setMultipleValues({
+        title: data.title ?? "",
+        description: data.description ?? "",
+        price: data.price ?? "",
+        location: data.location ?? "",
+        category: data.category ?? "",
+        duration: data.duration ?? "",
+        contact: data.contact ?? "",
+        availability: (data.availability as any) ?? {},
+      });
       setAvailability((data.availability as any) ?? {});
-      // Set existing images
       if (data.media_urls && data.media_urls.length > 0) {
         setExistingImages(data.media_urls);
       }
@@ -129,7 +135,7 @@ const ServiceEdit = () => {
     e.preventDefault();
     setValue("availability", availability);
 
-    if (!id) return;
+    if (!stringId) return;
 
     if (!validateForm()) {
       toast({
@@ -179,7 +185,7 @@ const ServiceEdit = () => {
         availability: availability,
       };
 
-      const { success, error } = await updateService(id, serviceData);
+      const { success, error } = await updateService(stringId, serviceData);
 
       if (!success) throw error;
 
@@ -188,7 +194,7 @@ const ServiceEdit = () => {
         await fetch("/api/services/revalidate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, action: "update" }),
+          body: JSON.stringify({ id: stringId, action: "update" }),
         });
       } catch (revalidateError) {
         console.error("Error triggering services revalidation:", revalidateError);

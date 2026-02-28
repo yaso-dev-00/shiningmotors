@@ -189,6 +189,7 @@ export const simAppApi = {
       supabase
         .from('sim_products')
         .select('*')
+        .eq('is_disabled', false)
         .order('created_at', { ascending: false })
         .limit(limit),
         
@@ -197,6 +198,7 @@ export const simAppApi = {
         .from('sim_products')
         .select('*')
         .eq('category', category)
+        .eq('is_disabled', false)
         .order('created_at', { ascending: false }),
         
     getProductDetails: (id: string) => 

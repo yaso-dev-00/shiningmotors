@@ -132,6 +132,9 @@ const EventForm = ({ initialData, onSubmit, isSubmitting }: EventFormProps) => {
   const [banner, setBannerFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [existingImage, setExistingImage] = useState<{banner:string[],gallery:string[]}>({banner:[],gallery:[]});
+  
+  // Get today's date in YYYY-MM-DD format for min date validation
+  const today = new Date().toISOString().split('T')[0];
    
   const form = useForm<FormData>({
     resolver: zodResolver(eventFormSchema) as any,
@@ -490,7 +493,7 @@ const EventForm = ({ initialData, onSubmit, isSubmitting }: EventFormProps) => {
                   <FormItem>
                     <FormLabel>Start Date</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} value={field.value || ""} />
+                      <Input type="date" min={today} {...field} value={field.value || ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -504,7 +507,7 @@ const EventForm = ({ initialData, onSubmit, isSubmitting }: EventFormProps) => {
                   <FormItem>
                     <FormLabel>End Date</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} value={field.value || ""} />
+                      <Input type="date" min={form.watch("start_date") || today} {...field} value={field.value || ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -799,7 +802,7 @@ const EventForm = ({ initialData, onSubmit, isSubmitting }: EventFormProps) => {
                       <FormItem>
                         <FormLabel>Registration Start Date</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} value={field.value || ""} />
+                          <Input type="date" min={today} {...field} value={field.value || ""} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -813,7 +816,7 @@ const EventForm = ({ initialData, onSubmit, isSubmitting }: EventFormProps) => {
                       <FormItem>
                         <FormLabel>Registration End Date</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} value={field.value || ""} />
+                          <Input type="date" min={form.watch("registration_start_date") || today} {...field} value={field.value || ""} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

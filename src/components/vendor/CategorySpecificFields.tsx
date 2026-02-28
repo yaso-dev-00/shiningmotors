@@ -62,7 +62,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="productCatalogUrl" className="flex items-center">
+              <Label htmlFor="productCatalogUrl" className="flex items-center mb-2">
                 Product Catalog URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -80,7 +80,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label htmlFor="brandCertificateUrl" className="flex items-center">
+              <Label htmlFor="brandCertificateUrl" className="flex items-center mb-2">
                 Brand Certificate URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -98,7 +98,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label htmlFor="returnPolicyUrl" className="flex items-center">
+              <Label htmlFor="returnPolicyUrl" className="flex items-center mb-2">
                 Return Policy URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -143,7 +143,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="rcDocumentUrl" className="flex items-center">
+              <Label htmlFor="rcDocumentUrl" className="flex items-center mb-2">
                 RC Document URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -161,7 +161,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label htmlFor="dealershipLicenseUrl" className="flex items-center">
+              <Label htmlFor="dealershipLicenseUrl" className="flex items-center mb-2">
                 Dealership License URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -179,7 +179,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label htmlFor="aviationOrMarineLicenseUrl" className="flex items-center">
+              <Label htmlFor="aviationOrMarineLicenseUrl" className="flex items-center mb-2">
                 Aviation/Marine License URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -224,7 +224,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="centerPhotosUrl" className="flex items-center">
+              <Label htmlFor="centerPhotosUrl" className="flex items-center mb-2">
                 Service Center Photos URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -242,7 +242,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label className="flex items-center">
+              <Label className="flex items-center mb-2">
                 Certification URLs
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -281,7 +281,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label htmlFor="insuranceProofUrl" className="flex items-center">
+              <Label htmlFor="insuranceProofUrl" className="flex items-center mb-2">
                 Insurance Proof URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -326,7 +326,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="hardwareProofUrl" className="flex items-center">
+              <Label htmlFor="hardwareProofUrl" className="flex items-center mb-2">
                 Hardware Proof URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -344,7 +344,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label htmlFor="eventLicenseUrl" className="flex items-center">
+              <Label htmlFor="eventLicenseUrl" className="flex items-center mb-2">
                 Event License URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -362,7 +362,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label>Past Event Media URLs</Label>
+              <Label className="mb-2 block">Past Event Media URLs</Label>
               {(categoryDetails.simRacing?.pastEventMediaUrls || []).map((url, index) => (
                 <div key={index} className="flex gap-2 mb-2">
                   <Input
@@ -419,7 +419,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
           <CardContent className="space-y-4">
          
             <div>
-              <Label htmlFor="eventLicenseUrl" className="flex items-center">
+              <Label htmlFor="eventLicenseUrl" className="flex items-center mb-2">
                 Event License URL
                 <span className="text-red-500 ml-1">*</span>
               </Label>
@@ -437,7 +437,7 @@ const CategorySpecificFields: React.FC<CategorySpecificFieldsProps> = ({
               )}
             </div>
             <div>
-              <Label>Past Event Media URLs</Label>
+              <Label className="mb-2 block">Past Event Media URLs</Label>
               {(categoryDetails.events?.pastEventMediaUrls || []).map((url, index) => (
                 <div key={index} className="flex gap-2 mb-2">
                   <Input

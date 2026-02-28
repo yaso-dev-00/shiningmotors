@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { simRacingApi } from "@/integrations/supabase/modules/simRacing";
 import { FileUploadField } from "@/components/admin/FileUploadField";
 import { Check, Loader2, X } from "lucide-react";
@@ -33,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { parse } from "path";
 
 const productSchema = z.object({
   name: z.string().min(2, "Product name must be at least 2 characters"),
@@ -62,6 +64,7 @@ const SimProductEdit = () => {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { toast } = useToast();
+  const { session } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [existingImageUrl, setExistingImageUrl] = useState<string[]>([]);
@@ -77,8 +80,8 @@ const SimProductEdit = () => {
     defaultValues: {
       name: "",
       description: "",
-      price: 0,
-      stock: 0,
+      price: 1,
+      stock: 1,
       brand: "",
       category: "",
     },
@@ -92,23 +95,27 @@ const SimProductEdit = () => {
 
   const fetchProductDetails = async () => {
     if (!id) return;
-    
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
       setIsLoading(true);
-      const { data, error } = await simRacingApi.shop.getProductById(id);
-      
-      if (error) throw error;
-      if (!data) throw new Error("Product not found");
-
+      const res = await fetch(`/api/vendor/sim-products/${id}?_t=${Date.now()}`, {
+        method: "GET",
+        credentials: "include",
+        headers,
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Failed to load product");
+      const data = body as { name: string; description?: string; price: number; stock?: number; brand?: string; category?: string; image_url?: string[] };
       form.reset({
         name: data.name,
         description: data.description || "",
         price: data.price,
-        stock: data.stock || 0,
+        stock: data.stock ?? 0,
         brand: data.brand || "",
         category: data.category || "",
       });
-
       if (data.image_url) {
         setExistingImageUrl(data.image_url);
       }
@@ -116,7 +123,7 @@ const SimProductEdit = () => {
       console.error("Error fetching product details:", error);
       toast({
         title: "Error",
-        description: "Failed to load product details",
+        description: error instanceof Error ? error.message : "Failed to load product details",
         variant: "destructive",
       });
     } finally {
@@ -301,8 +308,9 @@ const SimProductEdit = () => {
                           type="number" 
                           // placeholder="0.00"                         
                           onChange={(e) => {
-                            const value = parseFloat(e.target.value);
-                            field.onChange(isNaN(value) ? 0.00 : value);
+                            const value:any = parseFloat(e.target.value);
+                            // field.onChange(isNaN(value) ? 0.00 : value);
+                            field.onChange(value);
                           }}
                           value={field.value}
                         />
@@ -325,8 +333,8 @@ const SimProductEdit = () => {
                           // min="0" 
                           // step="1"
                           onChange={(e) => {
-                            const value = parseInt(e.target.value, 10);
-                            field.onChange(isNaN(value) ? 0 : value);
+                            const value =parseInt(e.target.value);
+                            field.onChange(value);
                           }}
                           value={field.value}
                         />
@@ -401,7 +409,7 @@ const SimProductEdit = () => {
                 <Button 
                   type="button" 
                   variant="outline" 
-                  onClick={() => router.push('/admin/sim-products' as any)}
+                  onClick={() => router.push((isVendorContext ? '/vendor/simracing-management' : '/admin/sim-products') as any)}
                   disabled={isLoading}
                 >
                   Cancel

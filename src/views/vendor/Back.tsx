@@ -10,7 +10,7 @@ const Back = () => {
   return (
    <div className="flex items-center justify-between px-4 relative top-3">
             <div className="flex items-center space-x-2 gap-1">
-              <Button variant="outline" size="icon" onClick={()=>router.push(`${location.pathname.includes("/simracing") ? "/vendor-dashboard" : router.back()}` as any)} aria-label="Back">
+              <Button variant="outline" size="icon" onClick={() => location.pathname.includes("/simracing") ? router.push("/vendor-dashboard") : router.back()} aria-label="Back">
                    <ArrowLeft className="h-4 w-4" />
               </Button>
         <p>back</p>

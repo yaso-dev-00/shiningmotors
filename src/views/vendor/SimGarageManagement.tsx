@@ -1,15 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Wrench, Plus, Edit, Trash2, Settings, Users } from 'lucide-react';
+import { Wrench, Plus, Edit, Trash2, Settings, Users, ArrowLeft } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import NextLink from "next/link";
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import Back from './Back';
 import { Database } from '@/integrations/supabase/types';
@@ -20,75 +20,93 @@ type GarageWithServices = SimGarage & {
 };
 
 const SimGarageManagement = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
   const [garages, setGarages] = useState<GarageWithServices[]>([]);
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchGarages();
-  }, [user]);
-
-  const fetchGarages = async () => {
+  const fetchGarages = useCallback(async () => {
     if (!user) return;
-    
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('sim_garages')
-        .select(`
-          *,
-          services:sim_garage_services(count)
-        `)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      setGarages((data || []) as GarageWithServices[]);
+      const res = await fetch(`/api/vendor/sim-garages?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) { setGarages([]); return; }
+        throw new Error(body?.error || "Failed to fetch sim garages");
+      }
+      const body = await res.json();
+      setGarages((body?.data || []) as GarageWithServices[]);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load sim garages";
       console.error('Error fetching garages:', error);
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, session?.access_token, toast]);
+
+  useEffect(() => { fetchGarages(); }, [fetchGarages]);
+  useEffect(() => {
+    if (!pathname?.includes("/vendor/simgarage-management")) return;
+    fetchGarages();
+  }, [pathname, fetchGarages]);
+  useEffect(() => {
+    const handler = () => {
+      if (!user || document.visibilityState !== "visible") return;
+      fetchGarages();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user, fetchGarages]);
 
   const handleDeleteGarage = async (id: string) => {
     if (!confirm('Are you sure you want to delete this garage?')) return;
-    
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
-      const { error } = await supabase
-        .from('sim_garages')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-      
+      const res = await fetch(`/api/vendor/sim-garages/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Failed to delete garage");
       setGarages(garages.filter((garage: GarageWithServices) => garage.id !== id));
       toast({
         title: "Success",
         description: "Garage deleted successfully",
       });
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to delete garage";
+      const message = error instanceof Error ? error.message : "Failed to delete garage";
       console.error('Error deleting garage:', error);
       toast({
         title: "Error",
-        description: errorMessage,
+        description: message,
         variant: "destructive",
       });
     }
   };
-
+ const router=useRouter()
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <Back />
+      <div className="flex items-center justify-between px-4 relative top-3">
+            <div className="flex items-center space-x-2 gap-1">
+              <Button variant="outline" size="icon" onClick={()=>router.push(`/vendor/simracing-management` as any)} aria-label="Back">
+                   <ArrowLeft className="h-4 w-4" />
+              </Button>
+        <p>back</p>
+      </div>
+    </div>
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between">

@@ -95,9 +95,10 @@ const ServiceManagement = () => {
       });
     } catch (error: unknown) {
       console.error("Error deleting service:", error);
+      const message = error instanceof Error ? error.message : "Failed to delete service";
       toast({
         title: "Error",
-        description: "Failed to delete service",
+        description: message,
         variant: "destructive",
       });
     }

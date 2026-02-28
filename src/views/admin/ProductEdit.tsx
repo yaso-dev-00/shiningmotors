@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/form";
 import { shopApi } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { ImageIcon } from "lucide-react";
 import { categoryData } from "@/data/products";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -116,6 +117,7 @@ const ProductEdit = () => {
   const router = useRouter();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { session } = useAuth();
 
   const [loading, setLoading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
@@ -238,16 +240,16 @@ const ProductEdit = () => {
     name: "",
     category: "",
     description: "",
-    price: 0,
+    price: 1,
     inventory: 2,
     images: [],
     status: "on sale",
     subCategory: "",
     parts: "",
-    weight: 0,
-    length: 0,
-    breadth: 0,
-    height: 0,
+    weight: 1,
+    length: 1,
+    breadth: 1,
+    height: 1,
     pickup_postcode: "",
     gst_percentage: 0,
   };
@@ -424,77 +426,87 @@ const ProductEdit = () => {
   const fetchProduct = useCallback(async () => {
     if (!id) return;
 
+    const vendorContext = typeof window !== "undefined" && window.location.pathname.includes("/vendor/");
+
     setLoading(true);
     setHasFetchedProduct(true);
     try {
-      const { data, error } = await supabase
-        .from("products")
-        .select()
-        .eq("id", id)
-        .single();
+      let data: Record<string, unknown> | null = null;
+      let existingPost: { id: string; content?: string; media_urls?: string[] } | null = null;
 
-      if (error) throw error;
+      if (vendorContext) {
+        const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+        if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+        const res = await fetch(`/api/vendor/products/${id}?_t=${Date.now()}`, {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+          headers,
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          if (res.status === 404) throw new Error("Product not found");
+          throw new Error(body?.error || "Failed to fetch product");
+        }
+        const body = await res.json();
+        data = body?.data?.product ?? null;
+        existingPost = body?.data?.existingPost ?? null;
+      } else {
+        const { data: productData, error } = await supabase
+          .from("products")
+          .select()
+          .eq("id", id)
+          .single();
+        if (error) throw error;
+        data = productData;
+        const postsResult = await supabase.from("posts").select("*").eq("product_id", id);
+        if (postsResult.data && postsResult.data.length > 0) {
+          existingPost = postsResult.data[0] as { id: string; content?: string; media_urls?: string[] };
+        }
+      }
 
       if (data) {
+        const name = String(data.name || "");
+        const categoryStr = String(data.category || "");
+        const description = String(data.description || "");
+        const subCategoryStr = String(data.subCategory || "");
+        const partsStr = String(data.parts || "");
+
         const productData = {
-          name: data.name || "",
-          category: data.category || "",
-          description: data.description || "",
-          price: Number(data.price) || 0,
+          name,
+          category: categoryStr,
+          description,
+          price: Number(data.price) || 1,
           inventory: Number(data.inventory) || 0,
-          status: (data.status as "on sale" | "upcoming") || "on sale",
-          subCategory: data.subCategory || "",
-          parts: data.parts || "",
-          weight: Number((data as any).weight) || 0,
-          length: Number((data as any).length) || 0,
-          breadth: Number((data as any).breadth) || 0,
-          height: Number((data as any).height) || 0,
-          pickup_postcode: (data as any).pickup_postcode || "",
-          gst_percentage: Number((data as any).gst_percentage) || 0,
+          status: ((data.status as string) as "on sale" | "upcoming") || "on sale",
+          subCategory: subCategoryStr,
+          parts: partsStr,
+          weight: Number((data as any).weight) || 1,
+          length: Number((data as any).length) || 1,
+          breadth: Number((data as any).breadth) || 1,
+          height: Number((data as any).height) || 1,
+          pickup_postcode: String((data as any).pickup_postcode || ""),
+          gst_percentage: Number((data as any).gst_percentage) || 1,
         };
 
-        // Set form values without triggering validation
         formRef.current.setMultipleValues(productData);
+        setCategory(categoryStr);
+        setSelectedSubCategory(subCategoryStr);
+        setSelectedItem(partsStr);
+        formRef.current.setValue("parts", partsStr);
 
-        // Set category first so loadExistingProductFilters can use it
-        setCategory(data.category);
-
-        setSelectedSubCategory(data.subCategory || "");
-        setSelectedItem(data.parts || "");
-        formRef.current.setValue("parts", data.parts || "");
-        const categoryInfo =
-          categoryData[data.category as keyof typeof categoryData];
-        const subCategoryKey = data.subCategory || "";
+        const categoryInfo = categoryData[categoryStr as keyof typeof categoryData];
+        const subCategoryKey = subCategoryStr || "";
         const items = categoryInfo?.subCategories ? (categoryInfo.subCategories as Record<string, string[]>)[subCategoryKey] || [] : [];
         setItemOptions(items);
 
-        // Check if there's an existing social media post for this product
-        try {
-          const postsResult = await supabase
-            .from("posts")
-            .select("*")
-            .eq("product_id", id);
-
-          if (postsResult.data && postsResult.data.length > 0) {
-            const existingPost = postsResult.data[0] as {
-              id: string;
-              content: string;
-              media_urls: string[];
-            };
-            setExistingPostId(existingPost.id);
-            setSocialDescription(existingPost.content || "");
-            setPostToSocial(true);
-
-            // Store existing post media separately
-            if (
-              existingPost.media_urls &&
-              Array.isArray(existingPost.media_urls)
-            ) {
-              setExistingPostMedia(existingPost.media_urls);
-            }
+        if (existingPost) {
+          setExistingPostId(existingPost.id);
+          setSocialDescription(existingPost.content || "");
+          setPostToSocial(true);
+          if (existingPost.media_urls && Array.isArray(existingPost.media_urls)) {
+            setExistingPostMedia(existingPost.media_urls);
           }
-        } catch (postError) {
-          // No existing post found, continue without error
         }
 
         if (data.images && Array.isArray(data.images)) {
@@ -511,7 +523,7 @@ const ProductEdit = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, toast, setSelectedSubCategory, setSelectedItem, setItemOptions]);
+  }, [id, toast, session?.access_token, setSelectedSubCategory, setSelectedItem, setItemOptions]);
 
   useEffect(() => {
     if (isEditing) {
@@ -784,11 +796,11 @@ const ProductEdit = () => {
       ...form.values,
       price: parseFloat(form.values.price.toString()) || 0,
       inventory: parseInt(form.values.inventory.toString()) || 0,
-      weight: parseFloat(form.values.weight.toString()) || 0,
-      length: parseFloat(form.values.length.toString()) || 0,
-      breadth: parseFloat(form.values.breadth.toString()) || 0,
-      height: parseFloat(form.values.height.toString()) || 0,
-      gst_percentage: parseFloat(form.values.gst_percentage.toString()) || 0,
+      weight: parseFloat(form.values.weight.toString()) || 1,
+      length: parseFloat(form.values.length.toString()) || 1,
+      breadth: parseFloat(form.values.breadth.toString()) || 1,
+      height: parseFloat(form.values.height.toString()) || 1,
+      gst_percentage: parseFloat(form.values.gst_percentage.toString()) || 1,
       // Include actual images for validation
       images:
         existingImages.length > 0
@@ -1429,10 +1441,9 @@ const ProductEdit = () => {
               <Label htmlFor="category">Category</Label>
               <Select
                 name="category"
-                value={form.values.category}
+                value={productCategories2.some((c) => c.value === form.values.category) ? form.values.category : ""}
                 onValueChange={(value) => {
                   form.setValue("category", value);
-
                   const subcategories = Object.keys(
                     (categoryData[value as keyof typeof categoryData]?.subCategories) || {}
                   );
@@ -1469,7 +1480,7 @@ const ProductEdit = () => {
               <div className="space-y-2">
                 <Label htmlFor="subCategory">Subcategory</Label>
                 <Select
-                  value={selectedSubCategory}
+                  value={subCategoryOptions.includes(selectedSubCategory) ? selectedSubCategory : ""}
                   onValueChange={(value) => {
                     updateSubCategory(value);
                     form.setValue("subCategory", value);
@@ -1506,7 +1517,7 @@ const ProductEdit = () => {
               <div className="space-y-2">
                 <Label htmlFor="parts">Parts</Label>
                 <Select
-                  value={selectedItem}
+                  value={itemOptions.includes(selectedItem) ? selectedItem : ""}
                   onValueChange={(value) => {
                     setSelectedItem(value);
                     form.setValue("parts", value);
@@ -2386,7 +2397,8 @@ function useSubcategoryLogic(category: string, form: ReturnType<typeof useFormVa
       setSelectedItem(items[0] || "");
       form.setValue("parts", items[0] || "");
     }
-  }, [category, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- form.setValue is stable, only run when category changes
+  }, [category]);
 
   const updateSubCategory = (sub: string) => {
     setSelectedSubCategory(sub);

@@ -83,7 +83,7 @@ interface VendorRegistrationStepOneProps {
 const categories = ['Shop', 'Vehicle', 'Service', 'SimRacing', 'Event'];
 
 const VendorRegistrationStepOne = ({ onSuccess, existingData }: VendorRegistrationStepOneProps) => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
    const [showAgreement, setShowAgreement] = useState(false);
   const [agreementAccepted, setAgreementAccepted] = useState(false);
@@ -178,13 +178,26 @@ const VendorRegistrationStepOne = ({ onSuccess, existingData }: VendorRegistrati
       const registrationData = {
         ...data,
         category_specific_details: { ...filterData },
-        user_id: user.id,
-        step: 1,
-        status: 'step_one_submitted'
       };
 
-      const { error } = await vendorApi.createStepOne(registrationData);
-      if (error) throw error;
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const response = await fetch('/api/vendor/registration', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(registrationData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to submit registration');
+      }
 
       toast({
         title: "Step 1 Submitted Successfully",
@@ -246,7 +259,7 @@ const VendorRegistrationStepOne = ({ onSuccess, existingData }: VendorRegistrati
               </h3>
 
               <div>
-                <Label htmlFor="personal_name">Full Name *</Label>
+                <Label htmlFor="personal_name" className="mb-2 block">Full Name *</Label>
                 <Input id="personal_name" {...register('personal_name')} className={errors.personal_name ? 'border-red-500' : ''} />
                 {errors.personal_name && <p className="text-red-500 text-sm mt-1">{errors.personal_name.message}</p>}
               </div>
@@ -261,20 +274,20 @@ const VendorRegistrationStepOne = ({ onSuccess, existingData }: VendorRegistrati
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
                 <div>
-                  <Label htmlFor="mobile">Mobile Number *</Label>
+                  <Label htmlFor="mobile" className="mb-2 block">Mobile Number *</Label>
                   <Input id="mobile" type="tel" {...register('mobile')} className={errors.mobile ? 'border-red-500' : ''} />
                   {errors.mobile && <p className="text-red-500 text-sm mt-1">{errors.mobile.message}</p>}
                 </div>
 
                 <div>
-                  <Label htmlFor="whatsapp_number">WhatsApp Number</Label>
+                  <Label htmlFor="whatsapp_number" className="mb-2 block">WhatsApp Number</Label>
                   <Input id="whatsapp_number"  type="tel" {...register('whatsapp_number')}  className={errors.whatsapp_number? 'border-red-500' : ''}  />
                   {errors.whatsapp_number && <p className="text-red-500 text-sm mt-1">{errors.whatsapp_number.message}</p>}
                 </div>
               </div>
 
               <div>
-                <Label htmlFor="email">Email Address *</Label>
+                <Label htmlFor="email" className="mb-2 block">Email Address *</Label>
                 <Input id="email" type="email" {...register('email')} className={errors.email ? 'border-red-500' : ''} />
                 {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email.message}</p>}
               </div>
@@ -290,9 +303,9 @@ const VendorRegistrationStepOne = ({ onSuccess, existingData }: VendorRegistrati
                 Select the categories you want to sell in. You can add more categories later after approval.
               </p>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-3">
                 {categories.map((category) => (
-                  <div key={category} className="flex items-center space-x-2">
+                  <div key={category} className="flex items-center space-x-3">
                     <Checkbox
                       id={category}
                       checked={selectedCategories.includes(category)}

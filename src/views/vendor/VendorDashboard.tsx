@@ -1,54 +1,82 @@
 "use client";
-import React, { useState } from 'react';
-import { vendorApi, VendorRegistration } from '@/integrations/supabase/modules/vendors';
+import React, { useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
+import { VendorRegistration } from '@/integrations/supabase/modules/vendors';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle, XCircle, Clock, Plus, Building, FileText, User, Eye, Edit, Settings, BarChart3, ArrowRight} from 'lucide-react';
-import VendorRegistrationForm from '@/components/vendor/VendorRegistrationForm';
+import { CheckCircle, XCircle, Clock, Plus, Building, FileText, Eye, Edit, Settings, BarChart3, ArrowRight} from 'lucide-react';
 import VendorUpdateRequestForm from '@/components/vendor/VendorUpdateRequestForm';
 import VendorBasicDetailsEdit from '@/components/vendor/VendorBasicDetailsEdit';
 import EnhancedVendorProfile from '@/components/vendor/EnhancedVendorProfile';
 import CategoryManagement from '@/components/vendor/CategoryManagement';
 import NextLink from 'next/link';
-import VendorRegistrationHistory from '@/components/vendor/VendorRegistrationHistory';
 import Layout from '@/components/Layout';
-import { useQuery } from '@tanstack/react-query';
 
 const VendorDashboard = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
+  const pathname = usePathname();
   const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [vendorRegistration, setVendorRegistration] = useState<VendorRegistration | null>(null);
+  const [updateRequests, setUpdateRequests] = useState<{ id: string; request_type: string; status: string; created_at: string; rejection_reason?: string | null }[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Use React Query to fetch vendor data (same as VendorProtectedRoute)
-  const { data: vendorData, isLoading: vendorLoading, refetch: refetchVendor } = useQuery({
-    queryKey: ["vendor-registration", user?.id],
-    queryFn: () => vendorApi.getByUserId(user!.id),
-    enabled: !!user,
-  });
-
-  // Fetch update requests when vendor data is available
-  const { data: updateRequestsData, isLoading: requestsLoading } = useQuery({
-    queryKey: ["vendor-update-requests", vendorData?.data?.id],
-    queryFn: () => {
-      if (!vendorData?.data?.id) {
-        throw new Error("Vendor ID is required");
+  const fetchVendorData = useCallback(async () => {
+    if (!user) return;
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+    try {
+      const res = await fetch(`/api/vendor/registration?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          setVendorRegistration(null);
+          setUpdateRequests([]);
+          return;
+        }
+        throw new Error(body?.error || "Failed to fetch registration");
       }
-      return vendorApi.getUpdateRequests(vendorData.data.id);
-    },
-    enabled: !!vendorData?.data?.id,
-  });
+      const body = await res.json();
+      const payload = body?.data ?? {};
+      setVendorRegistration((payload.registration ?? null) as VendorRegistration | null);
+      setUpdateRequests(Array.isArray(payload.updateRequests) ? (payload.updateRequests as { id: string; request_type: string; status: string; created_at: string; rejection_reason?: string | null }[]) : []);
+    } catch (err) {
+      console.error("Error fetching vendor data:", err);
+      toast({ title: "Error", description: "Failed to load vendor data", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [user, session?.access_token, toast]);
 
-  const vendorRegistration = vendorData?.data as any as VendorRegistration | null;
-  const updateRequests = updateRequestsData?.data || [];
-  const loading = vendorLoading || requestsLoading;
+  useEffect(() => {
+    if (user) {
+      setLoading(true);
+      fetchVendorData();
+    }
+  }, [user, fetchVendorData]);
 
-  const fetchVendorData = async () => {
-    await refetchVendor();
-  };
+  useEffect(() => {
+    if (!pathname?.includes("vendor-dashboard")) return;
+    fetchVendorData();
+  }, [pathname, fetchVendorData]);
+
+  useEffect(() => {
+    const handler = () => {
+      if (!user || document.visibilityState !== "visible") return;
+      fetchVendorData();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user, fetchVendorData]);
 
   const getStatusBadge = (vendor: VendorRegistration) => {
     if (vendor.rejection_reason) {

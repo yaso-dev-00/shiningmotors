@@ -1,93 +1,121 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Plus, Edit, Trash2, Users, DollarSign, BarChart3 } from 'lucide-react';
+import { Calendar, Plus, Edit, Trash2, Users, DollarSign, BarChart3, ArrowLeft } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import NextLink from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { vendorAnalyticsApi, type EventAnalytics } from '@/integrations/supabase/modules/vendorAnalytics';
+import type { EventAnalytics } from '@/integrations/supabase/modules/vendorAnalytics';
 import { type Event } from '@/integrations/supabase/modules/events';
 import EventRegistrationAnalytics from '@/components/vendor/EventRegistrationAnalytics';
 import Back from './Back';
 
 const EventManagement = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
+  const pathname = usePathname();
   const [events, setEvents] = useState<Event[]>([]);
   const [eventAnalytics, setEventAnalytics] = useState<EventAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchEvents = useCallback(async () => {
+    if (!user) return;
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/vendor/events?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) { setEvents([]); return; }
+        throw new Error(body?.error || "Failed to fetch events");
+      }
+      const body = await res.json();
+      setEvents((body?.data || []) as Event[]);
+    } catch (error) {
+      console.error('Error fetching events:', error);
+      toast({ title: "Error", description: "Failed to load events", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [user, session?.access_token, toast]);
+
+  const fetchEventAnalytics = useCallback(async () => {
+    if (!user) return;
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+    try {
+      const res = await fetch(`/api/vendor/events/analytics?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) { setEventAnalytics(null); return; }
+      const body = await res.json();
+      setEventAnalytics(body?.data ?? null);
+    } catch (error) {
+      console.error('Error fetching event analytics:', error);
+      setEventAnalytics(null);
+    }
+  }, [user, session?.access_token]);
 
   useEffect(() => {
     if (user) {
       fetchEvents();
       fetchEventAnalytics();
     }
-  }, [user]);
+  }, [user, fetchEvents, fetchEventAnalytics]);
 
-  const fetchEvents = async () => {
-    if (!user) return;
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .eq('organizer_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      setEvents(data || []);
-    } catch (error) {
-      console.error('Error fetching events:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load events",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (!pathname?.includes("/vendor/event-management")) return;
+    fetchEvents();
+  }, [pathname, fetchEvents]);
 
-  const fetchEventAnalytics = async () => {
-    if (!user) return;
-    try {
-      const { data, error } = await vendorAnalyticsApi.getEventAnalytics(user.id);
-      if (error) throw error;
-      setEventAnalytics(data);
-    } catch (error) {
-      console.error('Error fetching event analytics:', error);
-      setEventAnalytics(null);
-    }
-  };
+  useEffect(() => {
+    const handler = () => {
+      if (!user || document.visibilityState !== "visible") return;
+      fetchEvents();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user, fetchEvents]);
 
   const handleDeleteEvent = async (id: string) => {
     if (!confirm('Are you sure you want to delete this event?')) return;
-    
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
-      const { error } = await supabase
-        .from('events')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-      
+      const res = await fetch(`/api/vendor/events/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Failed to delete event");
       setEvents(events.filter(event => event.id !== id));
       await fetchEventAnalytics(); // Refresh analytics after deletion
       toast({
         title: "Success",
         description: "Event deleted successfully",
       });
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to delete event";
       console.error('Error deleting event:', error);
       toast({
         title: "Error",
-        description: "Failed to delete event",
+        description: message,
         variant: "destructive",
       });
     }
@@ -100,11 +128,18 @@ const EventManagement = () => {
       maximumFractionDigits: 0
     }).format(amount);
   };
-
+  const router=useRouter()
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <Back/>
+      <div className="flex items-center justify-between px-4 relative top-3">
+            <div className="flex items-center space-x-2 gap-1">
+              <Button variant="outline" size="icon" onClick={() => router.push("/vendor-dashboard")} aria-label="Back">
+                   <ArrowLeft className="h-4 w-4" />
+              </Button>
+        <p>back</p>
+      </div>
+    </div>
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between">

@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { vendorApi, VendorRegistration } from '@/integrations/supabase/modules/vendors';
+import { VendorRegistration } from '@/integrations/supabase/modules/vendors';
+import { useAuth } from '@/contexts/AuthContext';
 import { Edit, Save, X } from 'lucide-react';
 import { vendorBasicDetailsSchema, VendorBasicDetailsFormData } from '@/lib/validations/vendor';
 import {
@@ -28,6 +29,7 @@ const VendorBasicDetailsEdit: React.FC<VendorBasicDetailsEditProps> = ({
   vendorRegistration,
   onUpdate
 }) => {
+  const { session } = useAuth();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,28 +46,35 @@ const VendorBasicDetailsEdit: React.FC<VendorBasicDetailsEditProps> = ({
 
   const handleSubmit = async (data: VendorBasicDetailsFormData) => {
     setLoading(true);
+    const payload = {
+      vendor_registration_id: vendorRegistration.id,
+      request_type: 'update_details',
+      requested_changes: { ...data, justification: 'Basic details update request' },
+      current_data: {
+        personal_name: vendorRegistration.personal_name,
+        business_name: vendorRegistration.business_name,
+        email: vendorRegistration.email,
+        mobile: vendorRegistration.mobile
+      },
+      requested_by: vendorRegistration.user_id
+    };
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
-      await vendorApi.createUpdateRequest({
-        vendor_registration_id: vendorRegistration.id,
-        request_type: 'update_details',
-        requested_changes: {
-          ...data,
-          justification: 'Basic details update request'
-        },
-        current_data: {
-          personal_name: vendorRegistration.personal_name,
-          business_name: vendorRegistration.business_name,
-          email: vendorRegistration.email,
-          mobile: vendorRegistration.mobile
-        },
-        requested_by: vendorRegistration.user_id
+      const res = await fetch("/api/vendor/update-requests", {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify(payload),
       });
-
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to submit update request");
+      }
       toast({
         title: "Update Request Submitted",
         description: "Your basic details update request has been submitted for admin review."
       });
-      
       setIsEditing(false);
       onUpdate();
     } catch (error) {

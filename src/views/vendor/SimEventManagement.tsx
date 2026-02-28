@@ -1,85 +1,110 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Flag, Plus, Edit, Trash2, Users, Trophy } from 'lucide-react';
+import { Flag, Plus, Edit, Trash2, Users, Trophy, ArrowLeft } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import NextLink from "next/link";
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import Back from './Back';
 import type { SimEvent } from '@/integrations/supabase/modules/simRacing';
 
 const SimEventManagement = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
+  const pathname = usePathname();
   const [simEvents, setSimEvents] = useState<SimEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchSimEvents();
-  }, [user]);
-
-  const fetchSimEvents = async () => {
+  const fetchSimEvents = useCallback(async () => {
     if (!user) return;
-    
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('sim_events')
-        .select('*')
-        .eq('created_by', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      setSimEvents((data || []) as SimEvent[]);
+      const res = await fetch(`/api/vendor/sim-events?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) { setSimEvents([]); return; }
+        throw new Error(body?.error || "Failed to fetch sim events");
+      }
+      const body = await res.json();
+      setSimEvents((body?.data || []) as SimEvent[]);
     } catch (error: unknown) {
       console.error('Error fetching sim events:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load sim racing events",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load sim racing events", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, session?.access_token, toast]);
+
+  useEffect(() => {
+    fetchSimEvents();
+  }, [fetchSimEvents]);
+
+  useEffect(() => {
+    if (!pathname?.includes("/vendor/simevent-management")) return;
+    fetchSimEvents();
+  }, [pathname, fetchSimEvents]);
+
+  useEffect(() => {
+    const handler = () => {
+      if (!user || document.visibilityState !== "visible") return;
+      fetchSimEvents();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user, fetchSimEvents]);
 
   const handleDeleteSimEvent = async (id: string) => {
     if (!confirm('Are you sure you want to delete this sim event?')) return;
-    
+    const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
     try {
-      const { error } = await supabase
-        .from('sim_events')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-      
+      const res = await fetch(`/api/vendor/sim-events/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Failed to delete sim event");
       setSimEvents(simEvents.filter((event: SimEvent) => event.id !== id));
       toast({
         title: "Success",
         description: "Sim event deleted successfully",
       });
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to delete sim event";
       console.error('Error deleting sim event:', error);
       toast({
         title: "Error",
-        description: "Failed to delete sim event",
+        description: message,
         variant: "destructive",
       });
     }
   };
-
+  const router=useRouter()
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <Back />
+      <div className="flex items-center justify-between px-4 relative top-3">
+            <div className="flex items-center space-x-2 gap-1">
+              <Button variant="outline" size="icon" onClick={()=>router.push(`/vendor/simracing-management` as any)} aria-label="Back">
+                   <ArrowLeft className="h-4 w-4" />
+              </Button>
+        <p>back</p>
+      </div>
+    </div>
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between">

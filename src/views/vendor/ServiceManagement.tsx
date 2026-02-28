@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,29 +31,30 @@ import {
   MapPin,
   Filter,
   Search,
+  ArrowLeft,
 } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import NextLink from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  getServices,
-  deleteService,
-  ServicePost,
-} from "@/integrations/supabase/modules/services";
-import { vendorAnalyticsApi, ServiceAnalytics } from "@/integrations/supabase/modules/vendorAnalytics";
+import { ServicePost } from "@/integrations/supabase/modules/services";
+import type { ServiceAnalytics } from "@/integrations/supabase/modules/vendorAnalytics";
 import { useToast } from "@/hooks/use-toast";
 import Back from "./Back";
 
 const ServiceManagement = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
+  const pathname = usePathname();
   const [services, setServices] = useState<ServicePost[]>([]);
+  const [serviceStatus, setServiceStatus] = useState<"active" | "disabled" | "all">("active");
   const [analytics, setAnalytics] = useState<ServiceAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [bookingFilter, setBookingFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("bookings");
+  const initialFetchDone = React.useRef(false);
   const [bookingsByDate, setBookingsByDate] = useState<Record<string, Array<{
     id: string;
     service_id: string;
@@ -64,13 +66,76 @@ const ServiceManagement = () => {
     notes?: string;
   }>>>({});
 
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const h: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+    if (session?.access_token) h["Authorization"] = `Bearer ${session.access_token}`;
+    return h;
+  }, [session?.access_token]);
+
+  const fetchServices = useCallback(async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/vendor/services?status=${serviceStatus}&_t=${Date.now()}`, { 
+        method: "GET", 
+        cache: "no-store", 
+        credentials: "include", 
+        headers: getAuthHeaders() 
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) { setServices([]); return; }
+        throw new Error(body?.error || "Failed to fetch services");
+      }
+      const servicesBody = await res.json();
+      setServices((servicesBody?.data || []) as ServicePost[]);
+    } catch (error) {
+      console.error("Error fetching services:", error);
+      toast({ title: "Error", description: "Failed to load services", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [user, serviceStatus, toast, getAuthHeaders]);
+
+  const fetchAnalytics = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`/api/vendor/services/analytics?_t=${Date.now()}`, { 
+        method: "GET", 
+        cache: "no-store", 
+        credentials: "include", 
+        headers: getAuthHeaders() 
+      });
+      if (!res.ok) {
+        setAnalytics(null);
+      } else {
+        const body = await res.json();
+        setAnalytics(body?.data ?? null);
+      }
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+    }
+  }, [user, toast, getAuthHeaders]);
+
+  const fetchData = useCallback(async () => {
+    await Promise.all([fetchServices(), fetchAnalytics()]);
+  }, [fetchServices, fetchAnalytics]);
+
   useEffect(() => {
-    fetchData();
-  }, [user]);
+    if (user && !initialFetchDone.current) {
+      fetchData();
+      initialFetchDone.current = true;
+    }
+  }, [user, fetchData]);
+
+  useEffect(() => {
+    if (user && initialFetchDone.current) {
+      fetchServices();
+    }
+  }, [serviceStatus]);
 
   useEffect(() => {
     if (analytics?.recentBookings) {
-      // Group bookings by date for calendar highlighting
       const bookingMap: Record<string, Array<{
         id: string;
         service_id: string;
@@ -83,39 +148,51 @@ const ServiceManagement = () => {
       }>> = {};
       analytics.recentBookings.forEach((booking) => {
         const date = new Date(booking.booking_date).toISOString().split("T")[0];
-        if (!bookingMap[date]) {
-          bookingMap[date] = [];
-        }
+        if (!bookingMap[date]) bookingMap[date] = [];
         bookingMap[date].push(booking);
       });
       setBookingsByDate(bookingMap);
     }
   }, [analytics]);
 
-  const fetchData = async () => {
-    if (!user) return;
+  useEffect(() => {
+    if (!pathname?.includes("/vendor/service-management")) return;
+    fetchData();
+  }, [pathname, fetchData]);
 
+  useEffect(() => {
+    const handler = () => {
+      if (!user || document.visibilityState !== "visible") return;
+      fetchData();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user, fetchData]);
+
+  const handleToggleStatus = async (serviceId: string, isDisabled: boolean) => {
     try {
-      setLoading(true);
-      const [servicesResult, analyticsResult] = await Promise.all([
-        getServices(user.id),
-        vendorAnalyticsApi.getServiceAnalytics(user.id),
-      ]);
+      const res = await fetch(`/api/vendor/services/${serviceId}/toggle-status`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ is_disabled: isDisabled }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Failed to update service status");
 
-      if (servicesResult.error) throw servicesResult.error;
-      if (analyticsResult.error) throw analyticsResult.error;
+      toast({
+        title: "Success",
+        description: body.message || (isDisabled ? "Service disabled successfully" : "Service enabled successfully"),
+      });
 
-      setServices(servicesResult.data || []);
-      setAnalytics(analyticsResult.data);
-    } catch (error) {
-      console.error("Error fetching data:", error);
+      fetchData();
+    } catch (error: unknown) {
+      console.error("Error toggling service status:", error);
       toast({
         title: "Error",
-        description: "Failed to load service data",
+        description: error instanceof Error ? error.message : "Failed to update service status",
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -123,20 +200,49 @@ const ServiceManagement = () => {
     if (!confirm("Are you sure you want to delete this service?")) return;
 
     try {
-      const { success, error } = await deleteService(id);
+      const res = await fetch(`/api/vendor/services/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      const body = await res.json().catch(() => ({}));
 
-      if (!success) throw error;
+      if (!res.ok) {
+        if (body.canDisable) {
+          toast({
+            title: "Cannot Delete",
+            description: body.error,
+            action: (
+              <Button onClick={() => handleToggleStatus(id, true)} size="sm">
+                Disable Instead
+              </Button>
+            ),
+          });
+          return;
+        }
+        throw new Error(body?.error ?? "Failed to delete service");
+      }
 
       setServices(services.filter((service) => service.id !== id));
       toast({
         title: "Success",
         description: "Service deleted successfully",
       });
+      try {
+        await fetch("/api/services/revalidate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, action: "delete" }),
+        });
+      } catch (revalidateError) {
+        console.error("Error triggering services revalidation:", revalidateError);
+      }
     } catch (error) {
       console.error("Error deleting service:", error);
+      const message = error instanceof Error ? error.message : "Failed to delete service";
       toast({
         title: "Error",
-        description: "Failed to delete service",
+        description: message,
         variant: "destructive",
       });
     }
@@ -144,16 +250,26 @@ const ServiceManagement = () => {
 
   const handleStatusUpdate = async (bookingId: string, newStatus: string) => {
     try {
-      // Mock status update - replace with actual API call
+      const res = await fetch(`/api/vendor/services/bookings/${bookingId}`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error ?? "Failed to update booking status");
+      }
       toast({
         title: "Success",
         description: `Booking status updated to ${newStatus}`,
       });
       fetchData(); // Refresh data
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update booking status";
       toast({
         title: "Error",
-        description: "Failed to update booking status",
+        description: message,
         variant: "destructive",
       });
     }
@@ -258,10 +374,18 @@ const ServiceManagement = () => {
     );
   }
 
+  const router=useRouter()
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <Back />
+      <div className="flex items-center justify-between px-4 relative top-3">
+            <div className="flex items-center space-x-2 gap-1">
+              <Button variant="outline" size="icon" onClick={() => router.push("/vendor-dashboard")} aria-label="Back">
+                   <ArrowLeft className="h-4 w-4" />
+              </Button>
+        <p>back</p>
+      </div>
+      </div>
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between">
@@ -358,12 +482,24 @@ const ServiceManagement = () => {
           </div>
         )}
 
-        <Tabs defaultValue="bookings" className="w-full mt-2">
+        <Tabs 
+          value={activeTab}
+          onValueChange={(value) => {
+            setActiveTab(value);
+            if (value === "disabled") {
+              setServiceStatus("disabled");
+            } else if (value === "services") {
+              setServiceStatus("active");
+            }
+          }}
+          className="w-full mt-2"
+        >
           <TabsList className="w-full">
-            <div className="flex md:grid w-full grid-cols-5 overflow-scroll scrollbar-hide">
+            <div className="flex md:grid w-full grid-cols-6 overflow-scroll scrollbar-hide">
               <TabsTrigger value="bookings">Bookings</TabsTrigger>
               <TabsTrigger value="calendar">Calendar</TabsTrigger>
               <TabsTrigger value="services">Services</TabsTrigger>
+              <TabsTrigger value="disabled">Disabled</TabsTrigger>
               <TabsTrigger value="customers">Customers</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
             </div>
@@ -641,18 +777,32 @@ const ServiceManagement = () => {
                     {services.map((service) => (
                       <div
                         key={service.id}
-                        className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                        className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${service.is_disabled ? 'opacity-50' : ''}`}
                       >
                         <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-semibold text-lg truncate">
-                            {service.title}
-                          </h3>
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg truncate">
+                              {service.title}
+                            </h3>
+                            {service.is_disabled && (
+                              <Badge variant="secondary" className="mt-1">
+                                Disabled
+                              </Badge>
+                            )}
+                          </div>
                           <div className="flex gap-1">
                             <NextLink href={`/vendor/service/edit/${service.id}` as any}>
                               <Button variant="outline" size="sm">
                                 <Edit className="w-4 h-4" />
                               </Button>
                             </NextLink>
+                            <Button
+                              variant={service.is_disabled ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => service.id && handleToggleStatus(service.id, !service.is_disabled)}
+                            >
+                              {service.is_disabled ? "Enable" : "Disable"}
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"
@@ -676,6 +826,86 @@ const ServiceManagement = () => {
                         </p>
                         <div className="space-y-1">
                           <p className="text-xl font-bold text-green-600">
+                            {service.price}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Duration: {service.duration}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Location: {service.location}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="disabled">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Wrench className="w-5 h-5 mr-2 text-gray-600" />
+                  Disabled Services
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="max-[768px]:p-2">
+                {loading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+                    <p className="mt-2">Loading disabled services...</p>
+                  </div>
+                ) : services.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Wrench className="w-16 h-16 mx-auto text-green-400 mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">
+                      No Disabled Services
+                    </h3>
+                    <p className="text-gray-600">
+                      All your services are currently active.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {services.map((service) => (
+                      <div
+                        key={service.id}
+                        className="border rounded-lg p-4 opacity-60 hover:opacity-100 transition-opacity"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg truncate">
+                              {service.title}
+                            </h3>
+                            <Badge variant="secondary" className="mt-1">
+                              Disabled
+                            </Badge>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => service.id && handleToggleStatus(service.id, false)}
+                            >
+                              Enable
+                            </Button>
+                          </div>
+                        </div>
+                        {service.media_urls &&
+                          service.media_urls.length > 0 && (
+                            <img
+                              src={service.media_urls[0]}
+                              alt={service.title || "Service"}
+                              className="w-full h-32 object-cover rounded mb-2"
+                            />
+                          )}
+                        <p className="text-gray-600 text-sm mb-2 line-clamp-2">
+                          {service.description}
+                        </p>
+                        <div className="space-y-1">
+                          <p className="text-xl font-bold text-gray-600">
                             {service.price}
                           </p>
                           <p className="text-sm text-gray-500">
