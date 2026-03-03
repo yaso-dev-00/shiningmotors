@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import NextLink from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,10 +8,21 @@ import { useToast } from "@/hooks/use-toast";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { serviceCategories } from "@/data/serviceCategories";
-import { getServices, deleteService, ServicePost } from "@/integrations/supabase/modules/services";
+import { deleteService, ServicePost } from "@/integrations/supabase/modules/services";
 
 const ServiceManagement = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
+
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+    };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+  }, [session?.access_token]);
   const { toast } = useToast();
   const [services, setServices] = useState<ServicePost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +31,7 @@ const ServiceManagement = () => {
 
   useEffect(() => {
     fetchServices();
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (searchTerm.trim() === "") {
@@ -49,12 +60,27 @@ const ServiceManagement = () => {
 
     try {
       setLoading(true);
-      const { data, error } = await getServices(user.id);
+      const res = await fetch(`/api/admin/services?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          setServices([]);
+          setFilteredServices([]);
+          return;
+        }
+        throw new Error(body?.error || "Failed to fetch services");
+      }
 
-      setServices(data || []);
-      setFilteredServices(data || []);
+      const body = await res.json();
+      const data = (body?.data ?? []) as ServicePost[];
+      setServices(data);
+      setFilteredServices(data);
     } catch (error: unknown) {
       console.error("Error fetching services:", error);
       toast({
@@ -75,8 +101,8 @@ const ServiceManagement = () => {
 
       if (!success) throw error;
 
-      // Remove the service from the list
-      setServices((prev) => prev.filter((service) => service.id !== id));
+      // Refetch services to get real-time data
+      await fetchServices();
 
       // Trigger revalidation for services SSG/ISR
       try {

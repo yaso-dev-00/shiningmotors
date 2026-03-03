@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import NextLink from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -26,24 +26,52 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Edit, MoreHorizontal, Trash2, Calendar, Users, ChevronRight ,Plus} from "lucide-react";
 import { simRacingApi } from "@/integrations/supabase/modules/simRacing";
+import type { SimLeague } from "@/integrations/supabase/modules/simRacing";
+import { useAuth } from "@/contexts/AuthContext";
 import { format, parseISO } from "date-fns";
 
 const SimLeagueManagement = () => {
   const router = useRouter();
+  const { user, session } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
 
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+    };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+  }, [session?.access_token]);
+
   const { data: leagues = [], isLoading, refetch } = useQuery({
-    queryKey: ["simLeagues"],
+    queryKey: ["admin-sim-leagues", user?.id],
     queryFn: async () => {
-      const { data, error } = await simRacingApi.leagues.getAll();
-      if (error) {
-        console.error("Error fetching sim leagues:", error);
-        return [];
+      if (!user?.id) return [];
+
+      const res = await fetch(`/api/admin/sim-leagues?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) return [];
+        throw new Error(body?.error || "Failed to fetch sim leagues");
       }
-      return data || [];
+
+      const body = await res.json();
+      return (body?.data || []) as SimLeague[];
     },
+    enabled: !!user?.id && typeof window !== "undefined",
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const filteredLeagues = leagues.filter(league => 

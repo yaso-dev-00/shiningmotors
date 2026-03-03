@@ -98,7 +98,12 @@ const OrderManagement = () => {
                     <TableCell>{order.customer}</TableCell>
                     <TableCell>{order.date}</TableCell>
                     <TableCell>{order.items}</TableCell>
-                    <TableCell>${order.total.toFixed(2)}</TableCell>
+                    <TableCell>
+                      {new Intl.NumberFormat("en-IN", {
+                        style: "currency",
+                        currency: "INR",
+                      }).format(Number(order.total))}
+                    </TableCell>
                     <TableCell>
                       <span 
                         className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${

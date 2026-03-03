@@ -71,7 +71,7 @@ const productSchema = z.object({
   description: z.string().min(10, {
     message: "Description must be at least 10 characters.",
   }),
-  price: z.number().min(10, {
+  price: z.number().min(1, {
     message: "Price must be greater than 0.",
   }),
   category: z.string().min(1, {
@@ -426,44 +426,26 @@ const ProductEdit = () => {
   const fetchProduct = useCallback(async () => {
     if (!id) return;
 
-    const vendorContext = typeof window !== "undefined" && window.location.pathname.includes("/vendor/");
-
     setLoading(true);
     setHasFetchedProduct(true);
     try {
-      let data: Record<string, unknown> | null = null;
-      let existingPost: { id: string; content?: string; media_urls?: string[] } | null = null;
+      const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
 
-      if (vendorContext) {
-        const headers: HeadersInit = { "Content-Type": "application/json", "Cache-Control": "no-cache" };
-        if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
-        const res = await fetch(`/api/vendor/products/${id}?_t=${Date.now()}`, {
-          method: "GET",
-          cache: "no-store",
-          credentials: "include",
-          headers,
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          if (res.status === 404) throw new Error("Product not found");
-          throw new Error(body?.error || "Failed to fetch product");
-        }
-        const body = await res.json();
-        data = body?.data?.product ?? null;
-        existingPost = body?.data?.existingPost ?? null;
-      } else {
-        const { data: productData, error } = await supabase
-          .from("products")
-          .select()
-          .eq("id", id)
-          .single();
-        if (error) throw error;
-        data = productData;
-        const postsResult = await supabase.from("posts").select("*").eq("product_id", id);
-        if (postsResult.data && postsResult.data.length > 0) {
-          existingPost = postsResult.data[0] as { id: string; content?: string; media_urls?: string[] };
-        }
+      const res = await fetch(`/api/vendor/products/${id}?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 404) throw new Error("Product not found");
+        throw new Error(body?.error || "Failed to fetch product");
       }
+      const body = await res.json();
+      const data = body?.data?.product ?? null;
+      const existingPost = body?.data?.existingPost ?? null;
 
       if (data) {
         const name = String(data.name || "");
@@ -794,7 +776,7 @@ const ProductEdit = () => {
     // Convert string values to numbers for validation and include actual images
     const formDataWithNumbers = {
       ...form.values,
-      price: parseFloat(form.values.price.toString()) || 0,
+      price: parseFloat(form.values.price.toString()) || 1,
       inventory: parseInt(form.values.inventory.toString()) || 0,
       weight: parseFloat(form.values.weight.toString()) || 1,
       length: parseFloat(form.values.length.toString()) || 1,
@@ -1396,7 +1378,7 @@ const ProductEdit = () => {
                   id="price"
                   name="price"
                   type="number"
-                  min="0"
+                  min="1"
                   step="0.01"
                   placeholder="0.00"
                   value={form.values.price}

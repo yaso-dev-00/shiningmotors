@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Loader2,X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { useFormValidation } from "@/hooks/useFormValidation";
 import { FileUploadField } from "@/components/admin/FileUploadField";
 import { Vehicle } from "@/integrations/supabase/modules/vehicles";
@@ -44,6 +45,7 @@ const VehicleEdit = () => {
   const id = (params?.id as string) ?? "";
   const router = useRouter();
   const { toast } = useToast();
+  const { session } = useAuth();
   const isVendorContext =
     typeof window !== "undefined" && window.location.pathname.includes("/vendor/");
   const [loading, setLoading] = useState(false);
@@ -76,22 +78,38 @@ const VehicleEdit = () => {
   
   const fetchVehicle = async () => {
     if (!id) return;
-    
+
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('vehicles')
-        .select()
-        .eq('id', id)
-        .single();
-      
-      if (error) throw error;
-      
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+      };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
+      const res = await fetch(`/api/vendor/vehicles/${id}?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 404) throw new Error("Vehicle not found");
+        throw new Error(body?.error || "Failed to fetch vehicle");
+      }
+
+      const body = await res.json();
+      const data = body?.data ?? null;
+
       if (data) {
         const seatsStr: string = (() => {
           if (data.seats == null) return "";
-          if (typeof data.seats === 'number') return String(data.seats);
-          if (typeof data.seats === 'string') return data.seats;
+          if (typeof data.seats === "number") return String(data.seats);
+          if (typeof data.seats === "string") return data.seats;
           return "";
         })();
         form.setMultipleValues({
@@ -99,7 +117,6 @@ const VehicleEdit = () => {
           category: data.category || "",
           make: data.make || "",
           model: data.model || "",
-          // @ts-ignore - data.year can be number or string, String() handles both
           year: data.year != null ? String(data.year) : "",
           price: data.price != null ? String(data.price) : "",
           mileage: data.mileage != null ? String(data.mileage) : "",
@@ -107,9 +124,9 @@ const VehicleEdit = () => {
           description: data.description || "",
           status: data.status || "Available",
           seats: seatsStr,
-          fuel_type:data.fuel_type||""
+          fuel_type: data.fuel_type || "",
         });
-        
+
         if (data.images && Array.isArray(data.images)) {
           setExistingImages(data.images);
         }

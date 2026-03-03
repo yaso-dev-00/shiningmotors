@@ -1159,8 +1159,11 @@ export const CartProvider = ({ children }: CartProviderProps) => {
           }
           
           lastFetchedUserIdRef.current = user.id;
-          fetchAddresses();
-          fetchOrders();
+          // Fetch addresses in parallel (non-blocking)
+          // Orders are fetched on-demand when user visits orders page
+          fetchAddresses().catch((error) => {
+            console.error("Error fetching addresses:", error);
+          });
         } catch (error) {
           console.error("Error initializing user cart:", error);
         }

@@ -1,7 +1,7 @@
--- Quick fix for notifications type check constraint
--- Run this directly in Supabase SQL Editor if migration hasn't been applied
+-- Add product_update and product_purchase to notifications_type_check constraint
+-- Fixes error: new row for relation "notifications" violates check constraint "notifications_type_check"
+-- These types are used when notifying users about product updates/changes for products they purchased
 
--- Drop the existing check constraint if it exists
 DO $$ 
 BEGIN
   IF EXISTS (
@@ -14,7 +14,6 @@ BEGIN
   END IF;
 END $$;
 
--- Add new check constraint with all valid notification types
 ALTER TABLE public.notifications
 ADD CONSTRAINT notifications_type_check 
 CHECK (type IN (
@@ -72,8 +71,3 @@ CHECK (type IN (
   -- General fallback
   'general'
 ));
-
-
-
-
-

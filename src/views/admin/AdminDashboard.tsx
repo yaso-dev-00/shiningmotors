@@ -83,7 +83,7 @@ const AdminDashboard = () => {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">$45,231.89</div>
+              <div className="text-2xl font-bold">₹45,231.89</div>
               <p className="text-xs text-muted-foreground">
                 +20.1% from last month
               </p>
@@ -219,7 +219,7 @@ const AdminDashboard = () => {
                     <p className="text-sm font-medium leading-none">
                       Performance Exhaust
                     </p>
-                    <p className="text-sm text-muted-foreground">$1,999.00</p>
+                    <p className="text-sm text-muted-foreground">₹1,999.00</p>
                   </div>
                   <div className="ml-auto font-medium">+42%</div>
                 </div>

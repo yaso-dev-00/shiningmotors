@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import NextLink from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -25,24 +25,52 @@ import {
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Edit, MoreHorizontal, Trash2, MapPin, Phone, Mail, Wrench ,Plus} from "lucide-react";
 import { simRacingApi } from "@/integrations/supabase/modules/simRacing";
+import type { SimGarage } from "@/integrations/supabase/modules/simRacing";
+import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const SimGarageManagement = () => {
   const router = useRouter();
+  const { user, session } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedGarageId, setSelectedGarageId] = useState<string | null>(null);
 
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+    };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+  }, [session?.access_token]);
+
   const { data: garages = [], isLoading, refetch } = useQuery({
-    queryKey: ["simGarages"],
+    queryKey: ["admin-sim-garages", user?.id],
     queryFn: async () => {
-      const { data, error } = await simRacingApi.garages.getAll();
-      if (error) {
-        console.error("Error fetching sim garages:", error);
-        return [];
+      if (!user?.id) return [];
+
+      const res = await fetch(`/api/admin/sim-garages?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) return [];
+        throw new Error(body?.error || "Failed to fetch sim garages");
       }
-      return data || [];
+
+      const body = await res.json();
+      return (body?.data || []) as SimGarage[];
     },
+    enabled: !!user?.id && typeof window !== "undefined",
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const filteredGarages = garages.filter(garage => 

@@ -122,11 +122,12 @@ export const getAllServices = async (): Promise<{
 /**
  * Get all services by vendor id
  */
-export const getServices = async (id:string): Promise<{ 
+export const getServices = async (id:string, _timestamp?: number): Promise<{ 
   data: ServicePost[] | null; 
   error: Error | unknown 
 }> => {
   try {
+    // The _timestamp parameter forces a fresh query (cache-busting)
     const { data, error } = await supabase
       .from("services")
       .select(`

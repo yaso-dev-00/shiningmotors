@@ -22,9 +22,10 @@ function getQueryClient() {
     return new QueryClient({
       defaultOptions: {
         queries: {
-          retry: false,
+          retry: 1,
           refetchOnWindowFocus: false,
-          staleTime: 60 * 1000, // 1 minute
+          staleTime: 5 * 60 * 1000, // 5 minutes - data is considered fresh
+          gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection
         },
       },
     });
@@ -34,9 +35,10 @@ function getQueryClient() {
     browserQueryClient = new QueryClient({
       defaultOptions: {
         queries: {
-          retry: false,
+          retry: 1,
           refetchOnWindowFocus: false,
-          staleTime: 60 * 1000, // 1 minute
+          staleTime: 5 * 60 * 1000, // 5 minutes - data is considered fresh
+          gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection
         },
       },
     });

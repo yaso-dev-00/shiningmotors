@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Session, User as SupabaseUser } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { profilesApi } from "@/integrations/supabase/modules/profiles";
@@ -31,6 +31,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
+  const profileCacheRef = useRef<Map<string, { profile: any; timestamp: number }>>(new Map());
 
   const isAuthenticated = !!user;
   const isAdmin = userRole === "ADMIN";
@@ -147,6 +148,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const fetchUserProfile = async (userId: string) => {
     try {
+      // Check cache first (5 minute cache)
+      const cached = profileCacheRef.current.get(userId);
+      const now = Date.now();
+      if (cached && now - cached.timestamp < 5 * 60 * 1000) {
+        setProfile(cached.profile);
+        setUserRole((cached.profile.role as UserRole) || "USER");
+        return;
+      }
+
       const { data, error } = await profilesApi.profiles.getById(userId);
       if (error) {
         console.error("Error fetching profile:", error);
@@ -155,6 +165,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (data) {
         setProfile(data);
         setUserRole((data.role as UserRole) || "USER");
+        // Cache the profile
+        profileCacheRef.current.set(userId, { profile: data, timestamp: now });
       }
     } catch (error) {
       console.error("Unexpected error fetching profile:", error);

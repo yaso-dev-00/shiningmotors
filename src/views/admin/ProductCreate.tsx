@@ -226,7 +226,7 @@ const ProductCreate = () => {
                       name="price"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Price ($)</FormLabel>
+                          <FormLabel>Price (₹)</FormLabel>
                           <FormControl>
                             <Input
                               type="number"

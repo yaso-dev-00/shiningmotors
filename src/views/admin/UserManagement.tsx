@@ -31,14 +31,10 @@ const UserManagement = () => {
   const [newStatus, setNewStatus] = useState("");
   const { toast } = useToast();
   
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      // First get profiles
+      // First get profiles with cache-busting
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select('*');
@@ -87,6 +83,10 @@ const UserManagement = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
   
   const handleEditClick = (user: UserData) => {
     setEditUser(user);

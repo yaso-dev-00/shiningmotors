@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { getAllEvents, deleteEvent, getEventBySeller } from "@/integrations/supabase/modules/events";
 import { Event } from "@/integrations/supabase/modules/events";
 import { 
   Plus, 
@@ -68,21 +67,65 @@ const EventManagement = () => {
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
   const [currentTab, setCurrentTab] = useState("all");
-  const {user}=useAuth()
-  // Fetch events data
-  const { data: events, isLoading, isError } = useQuery({
-  
-    queryKey: ["events",user?.id],
-    queryFn: ()=>{
-       if (!user?.id) return [];
-      return getEventBySeller(user.id)
+  const { user, session } = useAuth();
+
+  // Get auth headers
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+    };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+  }, [session?.access_token]);
+
+  // Fetch events data with cache-busting via route handler
+  const { data: events, isLoading, isError, refetch } = useQuery({
+    queryKey: ["admin-events", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+
+      const res = await fetch(`/api/admin/events?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) return [];
+        throw new Error(body?.error || "Failed to fetch events");
+      }
+
+      const body = await res.json();
+      return (body?.data || []) as Event[];
     },
-    enabled:!!user?.id && typeof window !== 'undefined'
+    enabled: !!user?.id && typeof window !== "undefined",
+    staleTime: 0,
+    gcTime: 0,
   });
 
-  // Delete event mutation
+  // Delete event mutation using route handler
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteEvent(id),
+    mutationFn: async (id: string) => {
+      const res = await fetch("/api/admin/events", {
+        method: "DELETE",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ id }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to delete event");
+      }
+
+      return res.json();
+    },
     onSuccess: async (_result, id) => {
       // Trigger on-demand revalidation for the /events page and cached event data
       try {
@@ -95,7 +138,9 @@ const EventManagement = () => {
         console.error("Failed to revalidate events after delete:", error);
       }
 
-      queryClient.invalidateQueries({ queryKey: ["events"] });
+      // Refetch events to get fresh data
+      await refetch();
+
       toast({
         title: "Event deleted",
         description: "Event has been successfully deleted",
@@ -106,7 +151,7 @@ const EventManagement = () => {
       console.error("Error deleting event:", error);
       toast({
         title: "Error",
-        description: "Failed to delete event. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to delete event. Please try again.",
         variant: "destructive",
       });
     },

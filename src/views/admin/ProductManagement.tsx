@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Search, Edit, Trash2, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import  AdminLayout  from "@/components/admin/AdminLayout";
+import AdminLayout from "@/components/admin/AdminLayout";
 
 interface Product {
   id: string;
@@ -28,51 +29,72 @@ const ProductManagement = () => {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const router = useRouter();
-  
-  useEffect(() => {
-    const fetchProducts = async () => {
-      setLoading(true);
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        const userId = user?.id;
-        
-        if (!userId) {
-          toast({
-            title: "Error",
-            description: "User not authenticated",
-            variant: "destructive",
-          });
-          setLoading(false);
+  const { user, session } = useAuth();
+
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+    };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+  }, [session?.access_token]);
+
+  const fetchProducts = async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/products?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          setProducts([]);
           return;
         }
-     
-        const { data, error } = await supabase
-          .from('products')
-          .select('*').eq("seller_id", userId);
-        
-        if (error) throw error;
-        
-        const transformedProducts = (data || []).map(product => ({
-          ...product,
-          status: product.inventory > 10 ? "In Stock" : 
-                 product.inventory > 0 ? "Low Stock" : "Out of Stock"
-        }));
-        
-        setProducts(transformedProducts);
-      } catch (error) {
-        console.error("Error fetching products:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load products",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
+        throw new Error(body?.error || "Failed to fetch products");
       }
-    };
-    
+
+      const body = await res.json();
+      const data = body?.data ?? [];
+
+      const transformedProducts = (data as Product[]).map((product) => ({
+        ...product,
+        status:
+          product.inventory > 10
+            ? "In Stock"
+            : product.inventory > 0
+              ? "Low Stock"
+              : "Out of Stock",
+      }));
+
+      setProducts(transformedProducts);
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load products",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchProducts();
-  }, [toast]);
+  }, [user?.id]);
 
   const handleAddProduct = () => {
     router.push("/admin/products/create" as any);
@@ -97,7 +119,8 @@ const ProductManagement = () => {
           description: "The product has been deleted successfully",
         });
         
-        setProducts(products.filter(product => product.id !== id));
+        // Refetch products to get real-time data
+        await fetchProducts();
       } catch (error) {
         console.error("Error deleting product:", error);
         toast({

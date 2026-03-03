@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,8 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Plus, Search, Edit, Trash2, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import  AdminLayout  from "@/components/admin/AdminLayout";
+import AdminLayout from "@/components/admin/AdminLayout";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,32 +39,51 @@ const VehicleManagement = () => {
   const { toast } = useToast();
   const router = useRouter();
   const form = useFormValidation(initialForm);
-  
-  useEffect(() => {
-    fetchVehicles();
-  }, []);
+  const { user, session } = useAuth();
+
+  const getAuthHeaders = useCallback((): HeadersInit => {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+    };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+  }, [session?.access_token]);
 
   const fetchVehicles = async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const userId = user?.id;
-      
-      if (!userId) {
-        throw new Error("User not authenticated");
+      const res = await fetch(`/api/admin/vehicles?_t=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          setVehicles([]);
+          return;
+        }
+        throw new Error(body?.error || "Failed to fetch vehicles");
       }
-     
-      const { data, error } = await supabase
-        .from('vehicles')
-        .select('*').eq("seller_id", userId);
-      
-      if (error) throw error;
-      
-      const vehiclesWithStatus = data.map(vehicle => ({
+
+      const body = await res.json();
+      const data = body?.data ?? [];
+
+      const vehiclesWithStatus = (data as Vehicle[]).map((vehicle) => ({
         ...vehicle,
-        status: vehicle.status || 'Available'
+        status: vehicle.status || "Available",
       }));
-      
+
       setVehicles(vehiclesWithStatus);
     } catch (error) {
       console.error("Error fetching vehicles:", error);
@@ -76,6 +96,10 @@ const VehicleManagement = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchVehicles();
+  }, [user?.id]);
   
   const handleAddVehicle = () => {
     router.push("/admin/vehicles/create");
@@ -166,7 +190,12 @@ const VehicleManagement = () => {
                   <TableRow key={vehicle.id}>
                     <TableCell className="font-medium">{vehicle.title}</TableCell>
                     <TableCell>{vehicle.category}</TableCell>
-                    <TableCell>${vehicle.price?.toLocaleString() || '0'}</TableCell>
+                    <TableCell>
+                          {new Intl.NumberFormat("en-IN", {
+                            style: "currency",
+                            currency: "INR",
+                          }).format(Number(vehicle.price) || 0)}
+                        </TableCell>
                     <TableCell>{vehicle.year}</TableCell>
                     <TableCell>{vehicle.condition || 'Unknown'}</TableCell>
                     <TableCell>

@@ -104,8 +104,11 @@ const EventManagement = () => {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? "Failed to delete event");
-      setEvents(events.filter(event => event.id !== id));
+      
+      // Refetch events to get real-time data
+      await fetchEvents();
       await fetchEventAnalytics(); // Refresh analytics after deletion
+      
       toast({
         title: "Success",
         description: "Event deleted successfully",
