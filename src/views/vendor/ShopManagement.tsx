@@ -589,8 +589,8 @@ const ShopManagement = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {products.map((product) => (
                       <div key={product.id} className="border rounded-lg p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <h5 className="font-medium truncate">
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <h5 className="font-medium truncate min-w-0 flex-1">
                             {product.name}
                           </h5>
                           <Badge
@@ -601,13 +601,13 @@ const ShopManagement = () => {
                                 ? "secondary"
                                 : "default"
                             }
-                            className={
+                            className={`flex-shrink-0 text-nowrap ${
                               product.inventory === 0
                                 ? "text-red-600"
                                 : product.inventory < 5
                                 ? "text-yellow-600"
                                 : "text-green-600"
-                            }
+                            }`}
                           >
                             {product.inventory === 0
                               ? "Out of Stock"
@@ -724,8 +724,8 @@ const ShopManagement = () => {
                           key={product.id}
                           className="border rounded-lg p-4 opacity-60 hover:opacity-100 transition-opacity"
                         >
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1">
+                          <div className="flex justify-between items-start gap-2 mb-2">
+                            <div className="min-w-0 flex-1">
                               <h3 className="font-semibold text-lg truncate">
                                 {product.name}
                               </h3>
@@ -733,7 +733,7 @@ const ShopManagement = () => {
                                 Disabled
                               </Badge>
                             </div>
-                            <div className="flex gap-1">
+                            <div className="flex flex-shrink-0 gap-1">
                               <Button
                                 variant="default"
                                 size="sm"
@@ -1048,8 +1048,8 @@ const ShopManagement = () => {
                           key={product.id}
                           className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${product.is_disabled ? 'opacity-50' : ''}`}
                         >
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1">
+                          <div className="flex justify-between items-start gap-2 mb-2">
+                            <div className="min-w-0 flex-1">
                               <h3 className="font-semibold text-lg truncate">
                                 {product.name}
                               </h3>
@@ -1059,7 +1059,7 @@ const ShopManagement = () => {
                                 </Badge>
                               )}
                             </div>
-                            <div className="flex gap-1">
+                            <div className="flex flex-shrink-0 gap-1">
                           <NextLink href={`/vendor/shop/edit/${product.id}` as any}>
                             <Button variant="outline" size="sm">
                               <Edit className="w-4 h-4" />

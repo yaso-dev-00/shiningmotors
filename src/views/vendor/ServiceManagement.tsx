@@ -42,6 +42,27 @@ import type { ServiceAnalytics } from "@/integrations/supabase/modules/vendorAna
 import { useToast } from "@/hooks/use-toast";
 import Back from "./Back";
 
+/** Format service price for display - ensure ₹ is shown (e.g. "200-5000" → "₹200 - ₹5,000") */
+function formatServicePrice(price: string | null | undefined): string {
+  if (!price || typeof price !== "string") return "—";
+  const trimmed = price.trim();
+  if (!trimmed) return "—";
+  const rangeMatch = trimmed.match(/^([₹\d,.\s]+)\s*[-–—]\s*([₹\d,.\s]+)$/);
+  if (rangeMatch) {
+    const strip = (s: string) => s.replace(/\s/g, "").replace(/,/g, "").replace(/^₹/, "");
+    const low = strip(rangeMatch[1]);
+    const high = strip(rangeMatch[2]);
+    const formatPart = (s: string) => {
+      const n = parseFloat(s);
+      return isNaN(n) ? (s ? `₹${s}` : "—") : `₹${n.toLocaleString("en-IN")}`;
+    };
+    return `${formatPart(low)} - ${formatPart(high)}`;
+  }
+  if (trimmed.startsWith("₹")) return trimmed;
+  const num = parseFloat(trimmed.replace(/,/g, ""));
+  return isNaN(num) ? `₹${trimmed}` : `₹${num.toLocaleString("en-IN")}`;
+}
+
 const ServiceManagement = () => {
   const { user, session } = useAuth();
   const { toast } = useToast();
@@ -779,8 +800,8 @@ const ServiceManagement = () => {
                         key={service.id}
                         className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${service.is_disabled ? 'opacity-50' : ''}`}
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex-1">
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <div className="min-w-0 flex-1">
                             <h3 className="font-semibold text-lg truncate">
                               {service.title}
                             </h3>
@@ -790,7 +811,7 @@ const ServiceManagement = () => {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex gap-1">
+                          <div className="flex flex-shrink-0 gap-1">
                             <NextLink href={`/vendor/service/edit/${service.id}` as any}>
                               <Button variant="outline" size="sm">
                                 <Edit className="w-4 h-4" />
@@ -826,7 +847,7 @@ const ServiceManagement = () => {
                         </p>
                         <div className="space-y-1">
                           <p className="text-xl font-bold text-green-600">
-                            {service.price}
+                            {formatServicePrice(service.price)}
                           </p>
                           <p className="text-sm text-gray-500">
                             Duration: {service.duration}
@@ -906,7 +927,7 @@ const ServiceManagement = () => {
                         </p>
                         <div className="space-y-1">
                           <p className="text-xl font-bold text-gray-600">
-                            {service.price}
+                            {formatServicePrice(service.price)}
                           </p>
                           <p className="text-sm text-gray-500">
                             Duration: {service.duration}

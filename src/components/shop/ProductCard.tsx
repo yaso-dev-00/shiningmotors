@@ -105,7 +105,10 @@ const ProductCard = ({
           {category}
         </NextLink>
         <NextLink href={`/shop/product/${id}`} className="block">
-          <h3 className="mb-2 mt-1 text-lg font-medium transition-colors hover:text-sm-red">
+          <h3
+            className="mb-2 mt-1 text-lg font-medium transition-colors hover:text-sm-red line-clamp-1"
+            title={name}
+          >
             {name}
           </h3>
         </NextLink>

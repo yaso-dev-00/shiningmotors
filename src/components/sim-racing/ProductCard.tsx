@@ -41,7 +41,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, index = 0 }) 
               {product.category}
             </Badge>
           )}
-          <CardTitle className="text-lg truncate">{product.name}</CardTitle>
+          <CardTitle className="text-lg line-clamp-1" title={product.name}>
+            {product.name}
+          </CardTitle>
           {product.brand && (
             <div className="flex items-center text-sm text-gray-600">
               <Tag size={14} className="mr-1 text-gray-500" />

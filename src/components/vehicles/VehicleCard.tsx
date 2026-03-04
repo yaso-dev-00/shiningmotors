@@ -108,7 +108,10 @@ const statusColor = status ? (status.toLowerCase() === "available" ? "text-green
       <div className="p-4">
         {/* Vehicle title */}
         <NextLink href={`/vehicles/${id}` as any}>
-          <h3 className="mb-2 text-xl font-bold hover:text-sm-red">
+          <h3
+            className="mb-2 text-xl font-bold hover:text-sm-red line-clamp-1"
+            title={title}
+          >
             {title}
           </h3>
         </NextLink>
