@@ -29,7 +29,7 @@ const NotFound = () => {
         <div className="max-w-2xl mx-auto text-center">
           {/* Logo Section */}
           <div className="mb-8 flex justify-center">
-            <Link href="/" className="group">
+            <Link href="/" className="group" aria-label="Shining Motors home">
               <div className="relative w-48 h-20 md:w-64 md:h-24 transition-transform duration-300 group-hover:scale-105">
                 <Image
                   src="/shiningMotors.jpg"

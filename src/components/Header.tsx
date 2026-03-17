@@ -239,11 +239,11 @@ const Header = () => {
               <div className="flex flex-1 items-center justify-center">
                 {/* Desktop: show logo + search side-by-side */}
                 <div className="hidden md:flex items-center gap-4 w-full px-4">
-                  <NextLink href="/" className="flex items-center">
+                  <NextLink href="/" className="flex items-center" aria-label="Shining Motors home">
                     <div className="w-[150px] h-16 relative">
                       <Image
                         src="/shiningMotors.jpg"
-                        alt="logo"
+                        alt="Shining Motors"
                         fill
                         className="object-cover"
                         sizes="150px"
@@ -258,11 +258,11 @@ const Header = () => {
 
                 {/* Mobile: show logo only here (search appears below MainNavigation) */}
                 <div className="md:hidden flex flex-1 md:justify-center justify-center">
-                  <NextLink href="/" className="flex items-center">
+                  <NextLink href="/" className="flex items-center" aria-label="Shining Motors home">
                     <div className="w-[120px] h-16 relative">
                       <Image
                         src="/shiningMotors.jpg"
-                        alt="logo"
+                        alt="Shining Motors"
                         fill
                         className="object-cover"
                         sizes="120px"

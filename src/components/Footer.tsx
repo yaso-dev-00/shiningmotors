@@ -15,16 +15,16 @@ const Footer = () => {
               we offer a unique social shopping experience.
             </p>
             <div className="flex space-x-4">
-              <a href="#" className="text-gray-400 hover:text-sm-red">
+              <a href="#" className="text-gray-400 hover:text-sm-red" aria-label="Follow us on Facebook">
                 <Facebook size={20} />
               </a>
-              <a href="#" className="text-gray-400 hover:text-sm-red">
+              <a href="#" className="text-gray-400 hover:text-sm-red" aria-label="Follow us on Instagram">
                 <Instagram size={20} />
               </a>
-              <a href="#" className="text-gray-400 hover:text-sm-red">
+              <a href="#" className="text-gray-400 hover:text-sm-red" aria-label="Follow us on Twitter">
                 <Twitter size={20} />
               </a>
-              <a href="#" className="text-gray-400 hover:text-sm-red">
+              <a href="#" className="text-gray-400 hover:text-sm-red" aria-label="Subscribe on YouTube">
                 <Youtube size={20} />
               </a>
             </div>

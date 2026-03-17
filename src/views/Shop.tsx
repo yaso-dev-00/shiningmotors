@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ProductCard from "@/components/shop/ProductCard";
@@ -71,36 +71,37 @@ const Shop = ({ initialProducts = [], initialTotalCount = 0 }: ShopProps) => {
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
   const router = useRouter();
-  const [isInitial,setIsInitial]=useState(true)
-   const debouncedSearchTerm = useDebounce(searchTerm, 500);
-     useEffect(()=>{
-        window.scrollTo(0,0)
-     },[])
-  useEffect(()=>{
-      if(!isInitial)
-      {
+  const skipInitialFetch = useRef(true);
+  const firstProductRef = useRef<HTMLDivElement>(null);
+  const shouldScrollOnLoadEnd = useRef(false);
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
-      
-      setTimeout(() => {
-        const element = document.getElementById('products');
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth' });
-         
-        }
-      
-      }, 100);
-    }
-  
-    setIsInitial(false)
-  },[currentPage])
   useEffect(() => {
-    // Always fetch when any filter changes, including sortBy
-    // Skip initial render if no filters are applied (use initial data)
-    const hasFilters = selectedCategory || selectedStatus !== 'all' || minPrice || maxPrice || debouncedSearchTerm || currentPage > 1 || sortBy !== 'newest';
-    
-    if (hasFilters) {
-      fetchProducts();
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    if (skipInitialFetch.current) return;
+    shouldScrollOnLoadEnd.current = true;
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (!loading && shouldScrollOnLoadEnd.current) {
+      shouldScrollOnLoadEnd.current = false;
+      requestAnimationFrame(() => {
+        firstProductRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     }
+  }, [loading]);
+  useEffect(() => {
+    // Skip fetch only on very first mount with default state (use initialProducts)
+    const isDefaultState = !selectedCategory && selectedStatus === 'all' && !minPrice && !maxPrice && !debouncedSearchTerm && currentPage === 1 && sortBy === 'newest';
+    if (skipInitialFetch.current && isDefaultState) {
+      skipInitialFetch.current = false;
+      return;
+    }
+    skipInitialFetch.current = false;
+    fetchProducts();
     // eslint-disable-next-line
   }, [selectedCategory, selectedStatus, sortBy, minPrice, maxPrice, currentPage, debouncedSearchTerm]);
 
@@ -279,6 +280,7 @@ const Shop = ({ initialProducts = [], initialTotalCount = 0 }: ShopProps) => {
               onApply={handleFilterApply}
               resetFilters={resetFilters}
             />
+            <div ref={firstProductRef} className="h-px w-full" aria-hidden="true" />
           </div>
           <div className="hidden max-[640px]:block">
                <HorizontalScrollForShops>

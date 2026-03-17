@@ -9,7 +9,7 @@ export const CartButton = () => {
   const itemCount = cartItems.length; // Count unique items instead of total quantity
 
   return (
-    <Link href="/shop/cart" prefetch={true} className="inline-block">
+    <Link href="/shop/cart" prefetch={true} className="inline-block" aria-label="View shopping cart">
       <Button
         variant="ghost"
         size="icon"
