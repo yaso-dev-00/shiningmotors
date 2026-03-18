@@ -49,6 +49,9 @@ import {
 } from 'lucide-react';
 import Back from './Back';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { StatCard } from '@/components/analytics/StatCard';
+import { MetricGrid } from '@/components/analytics/MetricGrid';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const VendorAnalytics = () => {
   const { user } = useAuth();
@@ -784,7 +787,7 @@ const VendorAnalytics = () => {
   const hasEventCategory = vendorData?.categories?.includes('Event');
 console.log(analytics.service)
   return (
-    <div className="px-[5px]  md:px-5 py-8 pb-16 md:pb-0 ">
+    <div className="analytics-dashboard px-[5px] md:px-5 py-8 pb-16 md:pb-0 ">
       <div className='relative bottom-5 right-4'>
         <Back></Back>
       </div>
@@ -812,65 +815,40 @@ console.log(analytics.service)
         </div>
 
         {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-y-3 md:gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(totalRevenue + (eventAnalytics?.totalRevenue || 0))}</div>
-              <p className="text-xs text-muted-foreground">
-                <TrendingUp className="inline w-3 h-3 mr-1" />
-                +12.5% from last month
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Products/Services</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalProducts + (eventAnalytics?.totalEvents || 0)}</div>
-              <p className="text-xs text-muted-foreground">
-                <TrendingUp className="inline w-3 h-3 mr-1" />
-                Active listings
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
-              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalOrders + (eventAnalytics?.totalRegistrations || 0)}</div>
-              <p className="text-xs text-muted-foreground">
-                <TrendingUp className="inline w-3 h-3 mr-1" />
-                All time orders
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Average Order Value</CardTitle>
-              <Star className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency((totalOrders + (eventAnalytics?.totalRegistrations || 0)) > 0 ? (totalRevenue + (eventAnalytics?.totalRevenue || 0)) / (totalOrders + (eventAnalytics?.totalRegistrations || 0)) : 0)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                <TrendingUp className="inline w-3 h-3 mr-1" />
-                Per transaction
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <MetricGrid className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-y-3 md:gap-6">
+          <StatCard
+            label="Total Revenue"
+            value={totalRevenue + (eventAnalytics?.totalRevenue || 0)}
+            formatAsCurrency
+            icon={<DollarSign className="h-4 w-4" />}
+            trendDirection="up"
+            trendText="+12.5% from last month"
+          />
+          <StatCard
+            label="Total Products/Services"
+            value={totalProducts + (eventAnalytics?.totalEvents || 0)}
+            icon={<Package className="h-4 w-4" />}
+            helperText="Active listings"
+          />
+          <StatCard
+            label="Total Orders"
+            value={totalOrders + (eventAnalytics?.totalRegistrations || 0)}
+            icon={<ShoppingCart className="h-4 w-4" />}
+            helperText="All time orders"
+          />
+          <StatCard
+            label="Average Order Value"
+            value={
+              (totalOrders + (eventAnalytics?.totalRegistrations || 0)) > 0
+                ? (totalRevenue + (eventAnalytics?.totalRevenue || 0)) /
+                  (totalOrders + (eventAnalytics?.totalRegistrations || 0))
+                : 0
+            }
+            formatAsCurrency
+            icon={<Star className="h-4 w-4" />}
+            helperText="Per transaction"
+          />
+        </MetricGrid>
 
         {/* Category-wise Analytics */}
         <Tabs defaultValue={hasEventCategory ? "event" : Object.keys(analytics)[0]} className="w-full">

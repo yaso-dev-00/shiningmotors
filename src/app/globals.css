@@ -90,6 +90,75 @@
     @apply overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md transition-all duration-300 hover:shadow-xl;
   }
 
+  /* Demo analytics dark theme wrapper */
+  .demo-analytics-page {
+    @apply min-h-screen text-slate-50;
+    background: radial-gradient(circle at top left, #1f1336 0, #050816 40%, #020617 100%);
+  }
+
+  .demo-analytics-page .demo-shell {
+    @apply mx-auto max-w-7xl px-4 py-8 space-y-8;
+  }
+
+  .demo-analytics-page .demo-card {
+    @apply border border-slate-800/80 bg-slate-900/70 backdrop-blur-xl shadow-[0_18px_45px_rgba(0,0,0,0.65)];
+  }
+
+  .demo-analytics-page .demo-card-hover {
+    @apply transition-transform duration-300 hover:-translate-y-1 hover:shadow-[0_22px_55px_rgba(0,0,0,0.8)];
+  }
+
+  .demo-analytics-page .demo-pill {
+    @apply inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1 text-xs font-medium text-slate-300 border border-slate-700/80;
+  }
+
+  .demo-analytics-page .demo-trend-up {
+    @apply text-emerald-400;
+  }
+
+  .demo-analytics-page .demo-trend-down {
+    @apply text-rose-400;
+  }
+
+  .demo-analytics-page .demo-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #334155 transparent;
+  }
+
+  .demo-analytics-page .demo-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .demo-analytics-page .demo-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .demo-analytics-page .demo-scroll::-webkit-scrollbar-thumb {
+    background-color: #334155;
+    border-radius: 9999px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .demo-analytics-page * {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  .analytics-dashboard {
+    @apply min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100;
+  }
+
+  .analytics-stat-card .card-hover {
+    @apply hover:shadow-lg hover:-translate-y-0.5;
+  }
+
+  .analytics-chart-card {
+    @apply hover:shadow-lg hover:-translate-y-0.5 transition-transform duration-300;
+  }
+
   /* New classes for social page */
   .scrollbar-hide {
     -ms-overflow-style: none; /* IE and Edge */
